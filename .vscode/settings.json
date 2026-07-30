@@ -1,0 +1,13 @@
+{
+    "search.exclude": {
+        "**/dist": true,
+        "**/.next": true,
+        "**/node_modules": true
+    },
+    "files.exclude": {
+        "**/dist": true,
+        "**/.next": true
+    },
+    "sonarlint.testFilePattern": "**/dist/**, **/.next/**",
+    "css.lint.unknownAtRules": "ignore"
+}

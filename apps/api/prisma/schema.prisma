@@ -1,0 +1,333 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector"), uuid_ossp(map: "uuid-ossp")]
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+model User {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email          String       @unique
+  name           String
+  password       String?
+  avatar         String?
+  role           Role         @default(USER)
+  provider       AuthProvider @default(LOCAL)
+  providerId     String?
+  isEmailVerified Boolean     @default(false)
+  emailVerifyToken String?
+  passwordResetToken String?
+  passwordResetExpiry DateTime?
+  isActive       Boolean      @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  resumes        Resume[]
+  jobs           Job[]
+  analyses       Analysis[]
+  recommendations Recommendation[]
+  roadmaps       Roadmap[]
+  sessions       UserSession[]
+  coachingHistory CoachingSession[]
+  notifications  Notification[]
+
+  @@index([email])
+  @@index([provider, providerId])
+  @@map("users")
+}
+
+model UserSession {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String   @db.Uuid
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+// ─── Resume ────────────────────────────────────────────────────────────────────
+model Resume {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String       @db.Uuid
+  filename     String
+  originalName String
+  fileUrl      String
+  fileKey      String       // S3 key
+  fileSize     Int
+  mimeType     String
+  status       ResumeStatus @default(PENDING)
+  parsedData   Json?        // ParsedResume JSON
+  rawText      String?      @db.Text
+  atsScore     Float?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses     Analysis[]
+  embeddings   ResumeEmbedding[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("resumes")
+}
+
+model ResumeEmbedding {
+  id        String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  resumeId  String                  @db.Uuid
+  content   String                  @db.Text
+  embedding Unsupported("vector")
+  chunkIndex Int
+  createdAt DateTime               @default(now())
+
+  resume    Resume                  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@map("resume_embeddings")
+}
+
+// ─── Job ──────────────────────────────────────────────────────────────────────
+model Job {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId          String   @db.Uuid
+  title           String
+  company         String
+  description     String   @db.Text
+  location        String?
+  remote          Boolean  @default(false)
+  salaryMin       Float?
+  salaryMax       Float?
+  salaryCurrency  String?  @default("USD")
+  requiredSkills  String[]
+  preferredSkills String[]
+  experienceLevel String?
+  education       String?
+  jobType         String?  // FULL_TIME, PART_TIME, CONTRACT, etc.
+  industry        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses        Analysis[]
+  embeddings      JobEmbedding[]
+
+  @@index([userId])
+  @@index([title, company])
+  @@map("jobs")
+}
+
+model JobEmbedding {
+  id        String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  jobId     String                  @db.Uuid
+  content   String                  @db.Text
+  embedding Unsupported("vector")
+  chunkIndex Int
+  createdAt DateTime               @default(now())
+
+  job       Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_embeddings")
+}
+
+// ─── Analysis ─────────────────────────────────────────────────────────────────
+model Analysis {
+  id             String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId         String         @db.Uuid
+  resumeId       String         @db.Uuid
+  jobId          String         @db.Uuid
+  status         AnalysisStatus @default(PENDING)
+  matchScore     Float?
+  atsScore       Float?
+  skillGaps      Json?          // SkillGap[]
+  strengths      String[]
+  weaknesses     String[]
+  recommendations String[]
+  atsSuggestions Json?          // AtsSuggestion[]
+  rawAnalysis    Json?          // Full AI response
+  processingTime Int?           // milliseconds
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Relations
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume         Resume           @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job            Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  aiRecommendations Recommendation[]
+  roadmaps       Roadmap[]
+
+  @@index([userId])
+  @@index([resumeId])
+  @@index([jobId])
+  @@index([status])
+  @@map("analyses")
+}
+
+// ─── Recommendations ──────────────────────────────────────────────────────────
+model Recommendation {
+  id           String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String             @db.Uuid
+  analysisId   String             @db.Uuid
+  type         RecommendationType
+  title        String
+  description  String             @db.Text
+  url          String?
+  duration     String?
+  difficulty   DifficultyLevel    @default(INTERMEDIATE)
+  priority     Int                @default(0)
+  skills       String[]
+  provider     String?            // Coursera, Udemy, etc.
+  cost         String?            // FREE, PAID, etc.
+  isCompleted  Boolean            @default(false)
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  // Relations
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis     Analysis           @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([analysisId])
+  @@index([type])
+  @@map("recommendations")
+}
+
+// ─── Roadmap ──────────────────────────────────────────────────────────────────
+model Roadmap {
+  id           String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String      @db.Uuid
+  analysisId   String      @db.Uuid
+  title        String
+  targetRole   String
+  targetDate   DateTime?
+  milestones   Json        // Milestone[]
+  isActive     Boolean     @default(true)
+  completionPct Float      @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis     Analysis    @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([analysisId])
+  @@map("roadmaps")
+}
+
+// ─── Coaching Session ─────────────────────────────────────────────────────────
+model CoachingSession {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String    @db.Uuid
+  messages  Json      // ChatMessage[]
+  context   Json?     // Relevant resume/job context
+  title     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("coaching_sessions")
+}
+
+// ─── Skill Market Data ────────────────────────────────────────────────────────
+model SkillMarketData {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  skill         String    @unique
+  demandScore   Float
+  trend         String    // RISING, STABLE, DECLINING
+  averageSalary Float?
+  jobCount      Int       @default(0)
+  topCompanies  String[]
+  relatedSkills String[]
+  lastUpdated   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  @@index([skill])
+  @@index([demandScore])
+  @@map("skill_market_data")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  LINKEDIN
+}
+
+enum ResumeStatus {
+  PENDING
+  PROCESSING
+  ANALYZED
+  FAILED
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum RecommendationType {
+  PROJECT
+  CERTIFICATION
+  COURSE
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+// ─── Notification ─────────────────────────────────────────────────────────────
+model Notification {
+  id        String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String           @db.Uuid
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(INFO)
+  isRead    Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}

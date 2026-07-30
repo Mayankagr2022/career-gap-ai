@@ -1,0 +1,175 @@
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Req,
+  Res,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Request, Response } from 'express';
+import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LocalAuthGuard } from './guards/local-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { LinkedInAuthGuard } from './guards/linkedin-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
+import { ConfigService } from '@nestjs/config';
+
+function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }, isProduction: boolean) {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax' as const,
+  };
+
+  res.cookie('accessToken', tokens.accessToken, {
+    ...cookieOptions,
+    maxAge: 1 * 60 * 60 * 1000, // 1 hour
+  });
+
+  res.cookie('refreshToken', tokens.refreshToken, {
+    ...cookieOptions,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  });
+}
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly config: ConfigService,
+  ) {}
+
+  @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({ status: 409, description: 'Email already exists' })
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.register(dto);
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
+    return { user: result.user };
+  }
+
+  @Public()
+  @UseGuards(LocalAuthGuard)
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  async login(@CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(user);
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
+    return { user: result.user };
+  }
+
+  @Public()
+  @UseGuards(JwtRefreshGuard)
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token' })
+  async refreshToken(@CurrentUser() user: any, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const tokenToRefresh = req.cookies?.refreshToken || req.body?.refreshToken;
+    const result = await this.authService.refreshToken(user.id, tokenToRefresh);
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
+    return { user: result.user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Logout and invalidate tokens' })
+  async logout(@CurrentUser('id') userId: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    await this.authService.logout(userId, refreshToken);
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+    return { message: 'Logged out successfully' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('user')
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Get current authenticated user' })
+  async getMe(@CurrentUser() user: any) {
+    return user;
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset email' })
+  async forgotPassword(@Body() dto: { email: string }) {
+    await this.authService.forgotPassword(dto.email);
+    return { message: 'If an account exists with this email, a password reset link has been sent.' };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using token' })
+  async resetPassword(@Body() dto: any) {
+    if (!dto.token || !dto.password) {
+      throw new BadRequestException('Token and new password are required');
+    }
+    await this.authService.resetPassword(dto.token, dto.password);
+    return { message: 'Password has been successfully reset' };
+  }
+
+  // ── Google OAuth ──────────────────────────────────────────────────────────
+  @Public()
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  async googleAuth() {
+    // Passport handles the redirect
+  }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  async googleCallback(@CurrentUser() user: any, @Res() res: Response) {
+    const tokens = await this.authService.googleLogin(user);
+    const frontendUrl = this.config.get('app.frontendUrl', 'http://localhost:3000');
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, tokens, isProd);
+    res.redirect(`${frontendUrl}/dashboard`);
+  }
+
+  // ── LinkedIn OAuth ────────────────────────────────────────────────────────
+  @Public()
+  @Get('linkedin')
+  @UseGuards(LinkedInAuthGuard)
+  @ApiOperation({ summary: 'Initiate LinkedIn OAuth login' })
+  async linkedInAuth() {
+    // Passport handles the redirect
+  }
+
+  @Public()
+  @Get('linkedin/callback')
+  @UseGuards(LinkedInAuthGuard)
+  async linkedInCallback(@CurrentUser() user: any, @Res() res: Response) {
+    const tokens = await this.authService.linkedInLogin(user);
+    const frontendUrl = this.config.get('app.frontendUrl', 'http://localhost:3000');
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, tokens, isProd);
+    res.redirect(`${frontendUrl}/dashboard`);
+  }
+}
