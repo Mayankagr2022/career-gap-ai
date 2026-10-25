@@ -1,16 +1,18 @@
 # Deploying CareerGap AI on one server
 
-The whole app runs on a single Linux server with Docker Compose, deployed by GitHub Actions
-([`.github/workflows/main.yml`](../.github/workflows/main.yml)) over SSH.
+The API runs on a single Linux server with Docker Compose, deployed by GitHub Actions
+([`.github/workflows/main.yml`](../.github/workflows/main.yml)) over SSH. The website is built by the same workflow and hosted on
+GitHub Pages (see the last section).
 
 ```
-Internet --> Caddy (HTTPS, automatic certificates)
-               |-- /api/*  --> API  (NestJS)  --> PostgreSQL (pgvector) + Redis   (containers, private network)
-               `-- others  --> Web  (Next.js)                                     |
-                                                        resume files --> S3-compatible bucket (external)
+Browser --> GitHub Pages (static website)
+   |
+   '--> Caddy (HTTPS, automatic certificates) --> API (NestJS) --> PostgreSQL (pgvector) + Redis   (containers, private network)
+                                                        |
+                                                        '--> resume files --> S3-compatible bucket
 ```
 
-Caddy serves both apps on one host name, so the browser sees a single origin and login cookies work.
+The website and the API are on different addresses, so sign-in uses tokens (see the last section).
 PostgreSQL and Redis are not reachable from outside the server.
 
 For a managed, multi-server setup on AWS see [`infra/README.md`](../infra/README.md) (optional, started by hand from the
@@ -24,6 +26,22 @@ For a managed, multi-server setup on AWS see [`infra/README.md`](../infra/README
 | A domain name | An **A record** for the host (for example `app.example.com`) pointing at the server. |
 | An S3-compatible bucket | For resume files: AWS S3, Cloudflare R2, Backblaze B2 and similar. Create a bucket and an access key limited to it. |
 | GitHub repository access | To add secrets and variables and to create the `production` environment. |
+
+## Option: one EC2 server in your own AWS account (no domain needed)
+
+[`aws/server.yaml`](aws/server.yaml) is a CloudFormation template for the server: Ubuntu 24.04 on a `t3.small` (about $17 a month), a fixed (Elastic) IP,
+a firewall for ports 22, 80 and 443, an encrypted private S3 bucket for resumes, and a role that lets the server use that bucket without access keys.
+
+```bash
+ssh-keygen -t ed25519 -f careergap-deploy -N "" -C github-actions-deploy
+aws cloudformation deploy --stack-name careergap-server --template-file deploy/aws/server.yaml   --capabilities CAPABILITY_IAM --parameter-overrides "DeployPublicKey=$(cat careergap-deploy.pub)"
+aws cloudformation describe-stacks --stack-name careergap-server --query "Stacks[0].Outputs"   # PublicIp, bucket name
+```
+
+Then log in once as `ubuntu` with that key and run `setup-server.sh` (see *One-time server setup*), and create the server's `.env`.
+Without a domain, use the free host name derived from the IP: for 1.2.3.4 it is `1-2-3-4.sslip.io`. Put it in `DOMAIN`, and Caddy gets a real HTTPS
+certificate for it. Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` empty so the server's role is used, and set `AWS_S3_BUCKET` to the bucket in the outputs.
+The GitHub secrets and variables below then use that IP and `https://1-2-3-4.sslip.io` as `API_URL`.
 
 ## Free option: Oracle Cloud "Always Free" server
 
