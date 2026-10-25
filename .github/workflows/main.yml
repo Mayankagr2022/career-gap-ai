@@ -2,7 +2,7 @@ name: CI and Deploy
 
 # Pull requests and pushes to main run the checks. A push to main that passes them is also deployed to a server
 # running Docker Compose (see deploy/README.md for the one-time server setup), after approval of the "production"
-# environment. The AWS ECS alternative lives in deploy-aws.yml and only runs when started by hand.
+# environment. The deploy job only runs once the repository variable DEPLOY_ENABLED is "true". The AWS ECS alternative lives in deploy-aws.yml and only runs when started by hand.
 
 on:
   push:
@@ -90,7 +90,9 @@ jobs:
   deploy:
     name: Build images and deploy to the server
     needs: [check]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Skipped (not failed) until the repository variable DEPLOY_ENABLED is "true", which you set once the server and the
+    # secrets below exist (see deploy/README.md). Until then pushes are only checked.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # Add required reviewers to this environment in the repository settings to gate production deploys.

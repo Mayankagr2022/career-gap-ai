@@ -87,13 +87,14 @@ In the repository, *Settings*:
 
   | Variable | Value |
   |---|---|
+  | `DEPLOY_ENABLED` | `true`, set last: until it is set, pushes to `main` are only checked and the deploy job is skipped |
   | `PUBLIC_URL` | `https://app.example.com` (baked into the web bundle at build time) |
   | `SSH_PORT` | Optional, default `22` |
   | `DEPLOY_PATH` | Optional, default `/opt/careergap` |
 
 ## Deploying
 
-Push to `main` (or run the workflow by hand) and approve the `production` environment. The workflow:
+With `DEPLOY_ENABLED=true` set, push to `main` (or run the workflow by hand) and approve the `production` environment. The workflow:
 
 1. type-checks, tests and builds the code;
 2. builds the API and web images and pushes them to the GitHub Container Registry
