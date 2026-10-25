@@ -94,10 +94,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
-    this.logger.error(
-      `${request.method} ${request.url} → ${status}: ${message}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    // Only server faults are errors. A 401 is routine (a visitor with no session), other 4xx are warnings.
+    const line = `${request.method} ${request.url} → ${status}: ${message}`;
+    if (status >= 500) {
+      this.logger.error(line, exception instanceof Error ? exception.stack : undefined);
+    } else if (status === HttpStatus.UNAUTHORIZED) {
+      this.logger.debug(line);
+    } else {
+      this.logger.warn(line);
+    }
 
     response.status(status).json({
       success: false,

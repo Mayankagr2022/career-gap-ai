@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import { useAuthStore } from '@/stores/auth.store';
+import { getSessionHint, useAuthStore } from '@/stores/auth.store';
 
 export const getApiUrl = () => {
   if (typeof window !== 'undefined') {
@@ -41,7 +41,10 @@ apiClient.interceptors.response.use(
     // and would replace the real error ("Invalid email or password") with the refresh failure.
     const isAuthEndpoint = /\/auth\/(login|register|refresh|forgot-password|reset-password)/.test(originalRequest?.url ?? '');
 
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    // A visitor known to be signed out has nothing to refresh; trying only adds another failing request
+    const signedOut = getSessionHint() === '0';
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && !signedOut) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

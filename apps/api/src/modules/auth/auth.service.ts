@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { AuditService } from '../../common/audit/audit.service';
+import { tokenExpiresAt, tokenLifetimeMs } from './token-lifetime';
 
 // Refresh and reset tokens are stored hashed so a DB leak can't be replayed
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
@@ -289,12 +290,15 @@ export class AuthService {
   }
 
   private async generateTokens(user: User): Promise<AuthTokensDto> {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    // Both tokens carry the id of the session they belong to. The access token is only accepted while that session
+    // exists, so logout, a password change or deactivating the account takes effect immediately, not when the token expires.
+    const sessionId = crypto.randomUUID();
+    const payload = { sub: user.id, email: user.email, role: user.role, sid: sessionId };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.config.get('jwt.secret'),
-        expiresIn: this.config.get('jwt.expiresIn', '7d'),
+        expiresIn: this.config.get('jwt.expiresIn', '15m'),
       }),
       this.jwtService.signAsync(payload, {
         secret: this.config.get('jwt.refreshSecret'),
@@ -309,12 +313,12 @@ export class AuthService {
       where: { userId: user.id, expiresAt: { lt: new Date() } },
     });
 
-    // Store refresh token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    // The session lives exactly as long as the refresh token it belongs to
+    const expiresAt = new Date(tokenExpiresAt(refreshToken) ?? Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     await this.prisma.userSession.create({
       data: {
+        id: sessionId,
         userId: user.id,
         refreshTokenHash: sha256(refreshToken),
         expiresAt,
@@ -324,7 +328,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      expiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
+      expiresIn: Math.round((tokenLifetimeMs(accessToken) ?? 60 * 60 * 1000) / 1000), // seconds
       user: {
         id: user.id,
         email: user.email,

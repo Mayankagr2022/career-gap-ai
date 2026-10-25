@@ -26,25 +26,44 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub, isActive: true },
+  /**
+   * An access token is valid only while the session it was issued for exists. Logout, a password change, an admin
+   * deactivating the account and refresh-token rotation all delete the session, which ends the token at once.
+   * This replaces the plain user lookup, so it costs no extra query.
+   */
+  async validate(payload: { sub: string; sid?: string }) {
+    if (!payload.sid) {
+      // Issued before sessions were bound to tokens: ask the browser to refresh, which issues a bound token
+      throw new UnauthorizedException('Session expired. Please sign in again.');
+    }
+
+    const session = await this.prisma.userSession.findFirst({
+      where: {
+        id: payload.sid,
+        userId: payload.sub,
+        expiresAt: { gt: new Date() },
+        user: { isActive: true },
+      },
       select: {
-        id: true,
-        email: true,
-        name: true,
-        avatar: true,
-        role: true,
-        provider: true,
-        isEmailVerified: true,
-        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            avatar: true,
+            role: true,
+            provider: true,
+            isEmailVerified: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('User not found or account deactivated');
+    if (!session) {
+      throw new UnauthorizedException('Session ended or account deactivated');
     }
 
-    return user;
+    return session.user;
   }
 }

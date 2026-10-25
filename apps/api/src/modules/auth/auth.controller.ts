@@ -27,25 +27,32 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
+import { tokenLifetimeMs } from './token-lifetime';
 
 /** Brute-force guard for credential endpoints: per-IP, default 10 requests/minute. */
 const AUTH_THROTTLE = { default: { limit: Number(process.env.AUTH_THROTTLE_LIMIT ?? 10), ttl: 60_000 } };
 
-function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }, isProduction: boolean) {
-  const cookieOptions = {
+/** Same attributes when setting and clearing, so the browser reliably removes the cookie on logout. */
+function authCookieOptions(isProduction: boolean) {
+  return {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'lax' as const,
   };
+}
 
+function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }, isProduction: boolean) {
+  const cookieOptions = authCookieOptions(isProduction);
+
+  // Each cookie lasts exactly as long as the token inside it
   res.cookie('accessToken', tokens.accessToken, {
     ...cookieOptions,
-    maxAge: 1 * 60 * 60 * 1000, // 1 hour
+    maxAge: tokenLifetimeMs(tokens.accessToken) ?? 60 * 60 * 1000,
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
     ...cookieOptions,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: tokenLifetimeMs(tokens.refreshToken) ?? 30 * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -107,8 +114,9 @@ export class AuthController {
   async logout(@CurrentUser('id') userId: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     await this.authService.logout(userId, refreshToken);
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+    const options = authCookieOptions(this.config.get('NODE_ENV') === 'production');
+    res.clearCookie('accessToken', options);
+    res.clearCookie('refreshToken', options);
     return { message: 'Logged out successfully' };
   }
 

@@ -20,7 +20,7 @@ import { UsersModule } from '../users/users.module';
       useFactory: (config: ConfigService) => ({
         secret: config.get('jwt.secret'),
         signOptions: {
-          expiresIn: config.get('jwt.expiresIn', '7d'),
+          expiresIn: config.get('jwt.expiresIn', '15m'),
         },
       }),
     }),

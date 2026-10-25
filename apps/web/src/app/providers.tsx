@@ -5,7 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useEffect, useState } from 'react';
 
 import { ThemeProvider } from '@/components/theme-provider';
-import { useAuthStore } from '@/stores/auth.store';
+import { getSessionHint, useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api-client';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -24,6 +24,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const initAuth = async () => {
+      // A visitor known to be signed out has no session to look up: no request, no 401, no refresh attempt
+      if (getSessionHint() === '0') {
+        useAuthStore.getState().clearAuth();
+        useAuthStore.getState().setInitialized(true);
+        return;
+      }
       try {
         const user = await api.get<any>('/auth/user');
         useAuthStore.getState().setAuth(user);

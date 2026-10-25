@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiClient, getErrorMessage } from '@/lib/api-client';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, setSessionHint } from '@/stores/auth.store';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
@@ -64,6 +64,10 @@ export function useLogout() {
     mutationFn: () =>
       apiClient.post('/auth/logout', {}, { withCredentials: true }).catch(() => {}),
     onSettled: () => {
+      // Mark signed out right away and stop in-flight and polling requests, so nothing keeps calling the API
+      // (and failing, and trying to refresh) during the short delay below
+      setSessionHint(false);
+      queryClient.cancelQueries();
       router.push('/auth/login');
       
       // Delay wiping the state so the current page doesn't crash 
