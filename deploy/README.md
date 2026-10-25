@@ -23,7 +23,7 @@ For a managed, multi-server setup on AWS see [`infra/README.md`](../infra/README
 | Need | Notes |
 |---|---|
 | A Linux server | Ubuntu 22.04 or 24.04 with a public IPv4 address. Plan on **2 vCPU and 4 GB RAM** (2 GB works with swap) and 40 GB of disk. Images are built on GitHub, not here. |
-| A domain name | An **A record** for the host (for example `app.example.com`) pointing at the server. |
+| A host name for the API | A domain with an **A record** (for example `api.example.com`) pointing at the server, or, without a domain, the free `<ip-with-dashes>.sslip.io` name. |
 | An S3-compatible bucket | For resume files: AWS S3, Cloudflare R2, Backblaze B2 and similar. Create a bucket and an access key limited to it. |
 | GitHub repository access | To add secrets and variables and to create the `production` environment. |
 
@@ -34,7 +34,7 @@ a firewall for ports 22, 80 and 443, an encrypted private S3 bucket for resumes,
 
 ```bash
 ssh-keygen -t ed25519 -f careergap-deploy -N "" -C github-actions-deploy
-aws cloudformation deploy --stack-name careergap-server --template-file deploy/aws/server.yaml   --capabilities CAPABILITY_IAM --parameter-overrides "DeployPublicKey=$(cat careergap-deploy.pub)"
+aws cloudformation deploy --stack-name careergap-server --template-file deploy/aws/server.yaml \n  --capabilities CAPABILITY_IAM --parameter-overrides "DeployPublicKey=$(cat careergap-deploy.pub)"
 aws cloudformation describe-stacks --stack-name careergap-server --query "Stacks[0].Outputs"   # PublicIp, bucket name
 ```
 
@@ -167,7 +167,7 @@ Run these on the server in `/opt/careergap`:
 
 ```bash
 docker compose --project-name careergap ps                  # what is running and healthy
-docker compose --project-name careergap logs -f api         # follow the API logs (also: web, caddy, postgres, redis)
+docker compose --project-name careergap logs -f api         # follow the API logs (also: caddy, postgres, redis)
 cat .deployed-tag                                           # the commit that is deployed
 ```
 
@@ -192,7 +192,7 @@ Restore with the command in the header of `backup.sh`. Resume files live in your
 ## Limits to know about
 
 - **One server is a single point of failure**, with a few seconds of downtime on every deploy and during server maintenance.
-  If that matters, move to the AWS setup in `infra/`.
+  If that matters, move to the AWS setup in `infra/` (needs a domain).
 - **No automatic scaling.** If the server is too small, resize it.
 - **No web application firewall, monitoring or alerts.** Add an uptime check on `https://<domain>/api/v1/health/ready`.
 - Install security updates regularly (for example the `unattended-upgrades` package on Ubuntu).

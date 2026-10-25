@@ -339,7 +339,7 @@ Routes in `apps/web/src/app`:
 | `/dashboard` | Stats, latest analysis, recent analyses, trending skills, quick actions |
 | `/dashboard/resumes` | Upload (drag-and-drop), list, detail modal |
 | `/dashboard/jobs` | Manage target jobs (paste text, or upload a PDF/DOCX/TXT and review title and company) |
-| `/dashboard/analyses`, `/dashboard/analyses/[id]` | Analysis list and detailed report (score rings, skill gaps, ATS suggestions) |
+| `/dashboard/analyses`, `/dashboard/analyses/view?id=<id>` | Analysis list and detailed report (the id is a query parameter so the site can be a static export) (score rings, skill gaps, ATS suggestions) |
 | `/dashboard/recommendations` | Courses/certifications/projects with completion tracking |
 | `/dashboard/roadmaps` | Milestone roadmaps and progress |
 | `/dashboard/coach` | AI chat with session sidebar |
@@ -347,17 +347,18 @@ Routes in `apps/web/src/app`:
 | `/dashboard/settings` | Profile, security, notification tabs |
 | `/admin`, `/admin/users`, `/admin/settings` | Admin dashboard (role-guarded via `RequireRole`) |
 
-Data access is organised as one React Query hook per domain in `src/hooks/`. `src/lib/api-client.ts` is an axios instance with `withCredentials` and an interceptor that refreshes the session on `401` and replays queued requests.
+Data access is organised as one React Query hook per domain in `src/hooks/`. `src/lib/api-client.ts` is an axios instance and an interceptor that refreshes the session on `401` and replays queued requests. By default it uses cookies (`withCredentials`); in token mode (`NEXT_PUBLIC_AUTH_MODE=token`, used for the GitHub Pages build) it keeps the tokens in `src/lib/token-store.ts` and sends a `Bearer` header instead. A small `cg-session` hint in local storage stops signed-out visitors from calling `/auth/user` or `/auth/refresh`.
 
 ## Authentication & Security
 
-- Passwords hashed with bcrypt; JWT access + refresh tokens (refresh sessions stored in `user_sessions`), set as cookies and accepted as Bearer tokens.
+- Passwords hashed with bcrypt (at least 8 characters with a lower case letter, an upper case letter, a digit and a special character); JWT access + refresh tokens (refresh sessions stored in `user_sessions`, and an access token stops working once its session ends), set as cookies and accepted as Bearer tokens.
+- **Token mode** (`AUTH_TOKEN_MODE=true`): when the website is on another site than the API (GitHub Pages), the browser would not send the API's cookies. Register, login and refresh then return the tokens in the response body, the website keeps them in local storage and sends them as `Authorization: Bearer`, and Google/LinkedIn sign-in returns them in the URL fragment (never sent to a server). Cookie mode stays the default and is the safer choice when both are on one site.
 - Global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`) – unknown fields are rejected.
 - Helmet, compression, cookie-parser, CORS restricted to `FRONTEND_URL` / `localhost:3000` with credentials.
 - Rate limiting via `@nestjs/throttler` (default 100 req / 60 s).
 - Role-based access via `@Roles()` + `RolesGuard`; `@Public()` opts routes out of auth.
 - Resume uploads limited to 10 MB and kept in memory before being pushed to S3. Job description uploads are limited to 5 MB, are never stored as files (only the extracted text, in Redis for 15 minutes), and drafts are keyed by user so one user cannot confirm another's draft. File types are detected from the file's bytes, not the client-supplied type.
-- **Never commit real secrets.** `.gitignore` excludes `*.env`, but `apps/api/.env.production` and `apps/web/.env.production` are currently tracked in git – verify they contain only placeholders (or untrack them) and rotate any real credentials that were ever committed.
+- **Never commit real secrets.** `.gitignore` excludes `*.env`. `apps/api/.env.production` and `apps/web/.env.production` are tracked as templates and hold only placeholders (`your-…`); keep real values in the server's `.env` or the environment. Server secrets live in `/opt/careergap/.env` on the server and never in GitHub.
 
 ## Testing
 
@@ -371,30 +372,45 @@ Unit tests (Jest, no database needed) cover the job title/company detection, fil
 
 ## Deployment Notes
 
-1. Set `NODE_ENV=production` and provide `apps/api/.env.production` (or real environment variables).
+### What runs where (production)
+
+| Part | Where | Built and deployed by |
+|---|---|---|
+| Website (static export of `apps/web`) | GitHub Pages, https://mayankagr2022.github.io/career-gap-ai/ | `pages` job in `.github/workflows/main.yml` |
+| API, PostgreSQL (pgvector), Redis, Caddy (HTTPS) | One EC2 server in AWS (Docker Compose), https://3-232-231-174.sslip.io/api/v1 | `deploy` job in `main.yml`, over SSH, images in the GitHub Container Registry |
+| Resume files | Private S3 bucket (reached through the server's role) | `deploy/aws/server.yaml` |
+
+The server template, one-time setup, GitHub secrets and variables, backups and everyday commands are in [`deploy/README.md`](deploy/README.md). Any Linux server works; an Oracle Cloud free server is described there too.
+
+### Pipeline
+
+`.github/workflows/main.yml` runs on every pull request and push to `main`:
+
+1. **check**: install, type-check API and web, API unit tests, production build, and a static site build (catches pages that cannot be exported).
+2. **pages** (push to `main`, once the variable `API_URL` is set): builds the website with `NEXT_OUTPUT=export`, `NEXT_PUBLIC_AUTH_MODE=token`, the repository's base path and `API_URL`, and publishes it. Settings > Pages must use *GitHub Actions* as the source.
+3. **deploy** (push to `main`, once the variable `DEPLOY_ENABLED` is `true`): builds the API image, pushes it to `ghcr.io`, copies `deploy/` to the server, pulls the image, runs the database migrations, starts the new version and rolls back to the previous one if it does not become healthy. Add required reviewers to the `production` environment to approve each deploy.
+
+`deploy-aws.yml` is an optional, manual alternative (ECS Fargate, RDS, ElastiCache and a load balancer, defined with CDK in [`infra/`](infra/README.md)); it needs a domain and certificate and is skipped until `AWS_DEPLOY_ROLE_ARN` is set.
+
+### Settings that must agree
+
+| Setting | Where | Must be |
+|---|---|---|
+| `FRONTEND_URL` | server `.env` | the website's origin, e.g. `https://mayankagr2022.github.io/career-gap-ai` (the API only accepts browser calls from it) |
+| `AUTH_TOKEN_MODE` | API (set in `deploy/docker-compose.yml`) | `true` whenever the website is on another site |
+| `API_URL` | GitHub variable | the API's public address without `/api/v1`; baked into the website at build time |
+| `DOMAIN` | server `.env` | the API's host name (it needs a DNS record, or `<ip-with-dashes>.sslip.io`) |
+
+### Running it yourself without these workflows
+
+1. Set `NODE_ENV=production` and provide environment variables (see Configuration).
 2. Build: `pnpm build` (the shared package builds first).
 3. Apply migrations: `pnpm --filter @career-gap-ai/api db:migrate:prod`.
-4. Start the API: `pnpm --filter @career-gap-ai/api start`; start the web app with `pnpm --filter @career-gap-ai/web start` (or deploy to Vercel).
+4. Start the API: `pnpm --filter @career-gap-ai/api start`; start the web app with `pnpm --filter @career-gap-ai/web start`, or build the static site with `NEXT_OUTPUT=export pnpm --filter @career-gap-ai/web exec next build` (output in `apps/web/.next-export`).
 5. Ensure PostgreSQL has the `vector` extension, Redis is reachable by the API, and the S3 bucket exists.
-6. Set `FRONTEND_URL` (CORS), OAuth callback URLs and `NEXT_PUBLIC_API_URL` to your public domains.
+6. Set `FRONTEND_URL` (CORS), OAuth callback URLs and `NEXT_PUBLIC_API_URL` to your public addresses.
 7. Swagger is disabled when `NODE_ENV=production`.
-8. The API listens for load balancer checks on `GET /api/v1/health` (process is up) and `GET /api/v1/health/ready` (database reachable).
-   Behind a load balancer it trusts one proxy hop by default in production (`TRUST_PROXY_HOPS`), so rate limits apply per user and not per balancer.
-
-### Deploying with GitHub Actions
-
-`.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also published in two parts:
-
-- **The website** is built as a static export and hosted on **GitHub Pages** (the `pages` job runs once the repository variable `API_URL` is set). The site and the API are on different addresses, so the API runs with `AUTH_TOKEN_MODE=true` and sign-in uses Bearer tokens instead of cookies.
-- **The API** is deployed to a **single server running Docker Compose** after someone approves the `production` environment (the deploy job is skipped until the repository variable `DEPLOY_ENABLED` is `true`): it builds the API image
-(`apps/api/Dockerfile`), pushes it to the GitHub Container Registry, runs the database migrations, starts the new version behind
-Caddy (automatic HTTPS) and switches back to the previous version if the new one does not become healthy.
-
-(`apps/web/Dockerfile` still builds a standalone web server image for running the whole stack yourself.)
-The server files, the one-time setup, the GitHub secrets and variables, backups and day-to-day commands are in [`deploy/README.md`](deploy/README.md).
-
-An AWS alternative (ECS Fargate, RDS, ElastiCache, load balancer, defined in CDK) is in [`infra/`](infra/README.md); it only runs when started by hand from the
-*Deploy to AWS (optional)* workflow.
+8. The API answers load balancer checks on `GET /api/v1/health` (process is up) and `GET /api/v1/health/ready` (database reachable). In production it trusts one proxy hop by default (`TRUST_PROXY_HOPS`), so rate limits apply per user and not per proxy.
 
 ## Troubleshooting
 
@@ -411,6 +427,9 @@ An AWS alternative (ECS Fargate, RDS, ElastiCache, load balancer, defined in CDK
 | `prisma migrate dev` keeps proposing to drop `*_hnsw_idx` | Expected (see Migrations). Remove those `DROP INDEX` lines; `db:migrate` refuses to apply a migration that contains them |
 | `Last message must be from user` | The AI chat payload must end with a user message |
 | Browser CORS/cookie errors | `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` must match your actual origins |
+| Signed in on the website but every call is `401` | The website is on another site than the API but the API is not in token mode: set `AUTH_TOKEN_MODE=true` and build the site with `NEXT_PUBLIC_AUTH_MODE=token` |
+| Old link `/dashboard/analyses/<id>` | Forwarded to `/dashboard/analyses/view?id=<id>` by the site's not-found page |
+| Deploy job shows as skipped | Set the repository variable `DEPLOY_ENABLED=true` (and `API_URL` for the Pages job) |
 | Swagger 404 at `/api/docs` | Swagger lives at `/docs`; disabled in production |
 | Dev scripts `check.js`, `list-models.js`, `test-chat.js` in `apps/api` | Ad-hoc helpers for checking Gemini access/models; not part of the app runtime |
 
