@@ -20,7 +20,7 @@ import { appConfig } from './config/app.config';
 import { databaseConfig } from './config/database.config';
 import { jwtConfig } from './config/jwt.config';
 import { redisConfig } from './config/redis.config';
-import { openaiConfig } from './config/openai.config';
+import { aiConfig } from './config/ai.config';
 import { awsConfig } from './config/aws.config';
 import { oauthConfig } from './config/oauth.config';
 import { emailConfig } from './config/email.config';
@@ -33,7 +33,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     // Config
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig, redisConfig, openaiConfig, awsConfig, oauthConfig, emailConfig],
+      load: [appConfig, databaseConfig, jwtConfig, redisConfig, aiConfig, awsConfig, oauthConfig, emailConfig],
       envFilePath: process.env.NODE_ENV === 'production' ? '.env.production' : ['.env.local', '.env'],
     }),
 
