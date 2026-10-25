@@ -51,7 +51,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-40 bg-background/90 md:hidden"
           />
         )}
       </AnimatePresence>
@@ -144,7 +144,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
 
       {/* Logout Loading Backdrop */}
       {isLoggingOut && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/90">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
             <p className="font-medium animate-pulse">Logging out...</p>

@@ -118,6 +118,17 @@
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 20px hsl(220 75% 56% / 0.1);
   }
 
+  /* Modals: opaque surfaces only. backdrop-filter on a full-screen overlay (or on a card that is
+     scaling/fading) forces the browser to re-blur the whole page every animation frame, which flickers. */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4;
+  }
+
+  .modal-card {
+    @apply w-full rounded-2xl border border-border bg-background shadow-2xl;
+    will-change: transform, opacity;
+  }
+
   /* Brand gradient text */
   .gradient-text {
     @apply bg-clip-text text-transparent;

@@ -30,14 +30,16 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="modal-overlay"
+      transition={{ duration: 0.15 }}
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="glass-card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6"
+        className="modal-card max-w-2xl max-h-[90vh] overflow-y-auto p-6"
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center justify-between">

@@ -33,14 +33,16 @@ function NewAnalysisModal({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="modal-overlay"
+      transition={{ duration: 0.15 }}
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.95 }}
         animate={{ scale: 1 }}
         exit={{ scale: 0.95 }}
-        className="glass-card w-full max-w-md p-6"
+        className="modal-card max-w-md p-6"
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center justify-between">
@@ -75,7 +77,7 @@ function NewAnalysisModal({ onClose }: { onClose: () => void }) {
                     <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{resume.originalName}</div>
-                      <div className="text-xs text-muted-foreground">ATS: {Math.round(resume.atsScore || 0)}%</div>
+                      <div className="text-xs text-muted-foreground">ATS readiness: {Math.round(resume.atsScore || 0)}%</div>
                     </div>
                     {resumeId === resume.id && <CheckCircle className="ml-auto h-4 w-4 text-brand-400 shrink-0" />}
                   </button>

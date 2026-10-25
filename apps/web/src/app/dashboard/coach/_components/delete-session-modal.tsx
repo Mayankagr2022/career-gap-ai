@@ -8,19 +8,21 @@ export function DeleteSessionModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="modal-overlay !bg-transparent">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
+        transition={{ duration: 0.15 }}
       />
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-2xl glass-card"
+        className="modal-card relative max-w-md overflow-hidden p-6"
+        transition={{ duration: 0.15, ease: 'easeOut' }}
       >
         <h3 className="font-display text-xl font-bold mb-2">Delete Chat</h3>
         <p className="text-muted-foreground mb-6">
