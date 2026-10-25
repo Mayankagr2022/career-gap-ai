@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   BadRequestException,
   ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
@@ -12,8 +14,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
 import { ResumeParserService } from './resume-parser.service';
 import { ResumeStatus } from '@prisma/client';
+import { USER_LIST_LIMIT } from '../../common/utils/list-limit';
 import { decodeFilename, detectMimeType } from '../../common/documents/document-mime';
 
+/** Resumes one user may have waiting or being parsed at once; each costs AI calls. */
+export const MAX_PROCESSING_RESUMES_PER_USER = 5;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 @Injectable()
@@ -42,6 +47,15 @@ export class ResumesService {
     const mimeType = detectMimeType(file.buffer);
     if (!mimeType) {
       throw new BadRequestException('Only PDF and DOCX files are allowed');
+    }
+    const processing = await this.prisma.resume.count({
+      where: { userId, status: { in: [ResumeStatus.PENDING, ResumeStatus.PROCESSING] } },
+    });
+    if (processing >= MAX_PROCESSING_RESUMES_PER_USER) {
+      throw new HttpException(
+        'Several of your resumes are still being processed. Please wait for them to finish.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
     const originalName = decodeFilename(file.originalname);
 
@@ -99,6 +113,7 @@ export class ResumesService {
     const resumes = await this.prisma.resume.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+      take: USER_LIST_LIMIT,
       select: {
         id: true,
         originalName: true,

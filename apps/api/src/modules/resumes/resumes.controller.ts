@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { ResumesService } from './resumes.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiThrottle } from '../../common/throttle/ai-throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { memoryStorage } from 'multer';
 
@@ -26,6 +27,7 @@ export class ResumesController {
   constructor(private readonly resumesService: ResumesService) {}
 
   @Post('upload')
+  @AiThrottle()
   @ApiOperation({ summary: 'Upload a resume (PDF or DOCX)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(

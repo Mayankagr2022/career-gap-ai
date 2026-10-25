@@ -10,7 +10,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { Role } from '@prisma/client';
 
 @ApiTags('users')

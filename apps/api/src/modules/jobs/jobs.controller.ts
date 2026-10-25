@@ -10,6 +10,7 @@ import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { ConfirmUploadedJobDto } from './dto/confirm-uploaded-job.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiThrottle } from '../../common/throttle/ai-throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('jobs')
@@ -20,6 +21,7 @@ export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
   @Post()
+  @AiThrottle()
   @ApiOperation({ summary: 'Create a job with AI-parsed JD' })
   create(@CurrentUser('id') userId: string, @Body() dto: CreateJobDto) {
     return this.jobsService.create(userId, dto);
@@ -39,6 +41,7 @@ export class JobsController {
   }
 
   @Post('upload/:draftId/confirm')
+  @AiThrottle()
   @ApiOperation({ summary: 'Confirm an uploaded job description: set title and company, then AI-parse and save' })
   confirmUpload(
     @Param('draftId', ParseUUIDPipe) draftId: string,
@@ -61,6 +64,7 @@ export class JobsController {
   }
 
   @Put(':id')
+  @AiThrottle()
   @ApiOperation({ summary: 'Update a job' })
   update(
     @Param('id', ParseUUIDPipe) id: string,

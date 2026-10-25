@@ -6,6 +6,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AnalysesService } from './analyses.service';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiThrottle } from '../../common/throttle/ai-throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('analyses')
@@ -16,6 +17,7 @@ export class AnalysesController {
   constructor(private readonly analysesService: AnalysesService) {}
 
   @Post()
+  @AiThrottle()
   @ApiOperation({ summary: 'Start a resume-job gap analysis' })
   create(@CurrentUser('id') userId: string, @Body() dto: CreateAnalysisDto) {
     return this.analysesService.create(userId, dto.resumeId, dto.jobId);

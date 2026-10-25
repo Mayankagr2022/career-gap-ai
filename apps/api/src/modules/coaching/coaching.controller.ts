@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, UseGuards, ParseUUIDPipe, Q
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CoachingService } from './coaching.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiThrottle } from '../../common/throttle/ai-throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IsString, IsOptional, IsUUID, IsNotEmpty, MaxLength } from 'class-validator';
 
@@ -22,12 +23,14 @@ export class CoachingController {
   constructor(private readonly service: CoachingService) {}
 
   @Post('sessions')
+  @AiThrottle()
   @ApiOperation({ summary: 'Start a new coaching session' })
   startSession(@CurrentUser('id') userId: string, @Body() dto: StartSessionDto) {
     return this.service.startSession(userId, dto.message, dto.analysisId);
   }
 
   @Post('sessions/:id/messages')
+  @AiThrottle()
   @ApiOperation({ summary: 'Continue a coaching session' })
   continueSession(
     @Param('id', ParseUUIDPipe) id: string,
@@ -50,6 +53,7 @@ export class CoachingController {
   }
 
   @Get('interview-questions')
+  @AiThrottle()
   @ApiOperation({ summary: 'Generate interview questions for a job' })
   getInterviewQuestions(
     @CurrentUser('id') userId: string,

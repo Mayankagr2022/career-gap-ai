@@ -2,6 +2,7 @@ import { BadRequestException, Controller, Get, ParseUUIDPipe, Query, UseGuards }
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { MarketService } from './market.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiThrottle } from '../../common/throttle/ai-throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -65,6 +66,7 @@ export class MarketController {
   @ApiBearerAuth('JWT')
   @UseGuards(JwtAuthGuard)
   @Get('analyze')
+  @AiThrottle()
   @ApiOperation({ summary: 'AI-powered skill market analysis' })
   analyzeSkills(@Query('skills') skillsQuery: string) {
     const skills = skillsQuery?.split(',').map((s) => s.trim()).filter(Boolean) || [];
