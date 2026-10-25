@@ -45,6 +45,14 @@ export class EmbeddingService {
    * Falls back to the next provider if any text fails.
    */
   async generateEmbeddings(texts: string[], inputType: EmbeddingInputType = 'passage'): Promise<number[][]> {
+    return (await this.embed(texts, inputType)).vectors;
+  }
+
+  /**
+   * Same as generateEmbeddings, but also reports which model produced the vectors. That is what gets stored with them:
+   * vectors of different models are not comparable, so a search must only look at rows made by the query's model.
+   */
+  async embed(texts: string[], inputType: EmbeddingInputType = 'passage'): Promise<{ vectors: number[][]; model: string }> {
     if (this.order.length === 0) {
       throw new HttpException('No embedding provider is configured.', HttpStatus.SERVICE_UNAVAILABLE);
     }
@@ -60,7 +68,7 @@ export class EmbeddingService {
             throw new Error(`${provider} returned ${v.length}-dim embedding, expected ${EMBEDDING_DIMENSIONS}`);
           }
         }
-        return vectors;
+        return { vectors, model: provider === 'nvidia' ? this.nvidiaModel : this.geminiModel };
       } catch (error: any) {
         lastError = error;
         this.logger.warn(`Embedding provider "${provider}" failed: ${String(error?.message).slice(0, 200)}`);
@@ -121,7 +129,7 @@ export class EmbeddingService {
   async storeResumeEmbedding(resumeId: string, text: string): Promise<void> {
     // Split text into chunks of ~500 tokens each
     const chunks = this.chunkText(text, 2000);
-    const embeddings = await this.generateEmbeddings(chunks);
+    const { vectors: embeddings, model } = await this.embed(chunks);
 
     // Delete existing embeddings
     await this.prisma.resumeEmbedding.deleteMany({ where: { resumeId } });
@@ -130,8 +138,8 @@ export class EmbeddingService {
     for (let i = 0; i < chunks.length; i++) {
       const vectorStr = `[${embeddings[i].join(',')}]`;
       await this.prisma.$executeRaw`
-        INSERT INTO resume_embeddings (id, "resumeId", content, embedding, "chunkIndex", "createdAt")
-        VALUES (gen_random_uuid(), ${resumeId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
+        INSERT INTO resume_embeddings (id, "resumeId", content, embedding, "chunkIndex", "embeddingModel", "createdAt")
+        VALUES (gen_random_uuid(), ${resumeId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, ${model}, NOW())
       `;
     }
 
@@ -140,15 +148,15 @@ export class EmbeddingService {
 
   async storeJobEmbedding(jobId: string, text: string): Promise<void> {
     const chunks = this.chunkText(text, 2000);
-    const embeddings = await this.generateEmbeddings(chunks);
+    const { vectors: embeddings, model } = await this.embed(chunks);
 
     await this.prisma.jobEmbedding.deleteMany({ where: { jobId } });
 
     for (let i = 0; i < chunks.length; i++) {
       const vectorStr = `[${embeddings[i].join(',')}]`;
       await this.prisma.$executeRaw`
-        INSERT INTO job_embeddings (id, "jobId", content, embedding, "chunkIndex", "createdAt")
-        VALUES (gen_random_uuid(), ${jobId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
+        INSERT INTO job_embeddings (id, "jobId", content, embedding, "chunkIndex", "embeddingModel", "createdAt")
+        VALUES (gen_random_uuid(), ${jobId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, ${model}, NOW())
       `;
     }
   }
@@ -158,8 +166,8 @@ export class EmbeddingService {
     userId: string,
     limit: number = 5,
   ): Promise<Array<{ resumeId: string; similarity: number; content: string }>> {
-    const embedding = await this.generateEmbedding(queryText, 'query');
-    const vectorStr = `[${embedding.join(',')}]`;
+    const { vectors, model } = await this.embed([queryText], 'query');
+    const vectorStr = `[${vectors[0].join(',')}]`;
 
     const results = await this.prisma.$queryRaw<
       Array<{ resumeId: string; similarity: number; content: string }>
@@ -170,6 +178,7 @@ export class EmbeddingService {
       FROM resume_embeddings re
       JOIN resumes r ON r.id = re."resumeId"
       WHERE r."userId" = ${userId}::uuid
+        AND re."embeddingModel" = ${model}
       ORDER BY re.embedding <=> ${vectorStr}::vector
       LIMIT ${limit}
     `;
@@ -186,8 +195,8 @@ export class EmbeddingService {
     userId: string,
     limit: number = 5,
   ): Promise<Array<{ jobId: string; similarity: number; content: string }>> {
-    const embedding = await this.generateEmbedding(queryText, 'query');
-    const vectorStr = `[${embedding.join(',')}]`;
+    const { vectors, model } = await this.embed([queryText], 'query');
+    const vectorStr = `[${vectors[0].join(',')}]`;
 
     const results = await this.prisma.$queryRaw<
       Array<{ jobId: string; similarity: number; content: string }>
@@ -198,6 +207,7 @@ export class EmbeddingService {
       FROM job_embeddings je
       JOIN jobs j ON j.id = je."jobId"
       WHERE j."userId" = ${userId}::uuid
+        AND je."embeddingModel" = ${model}
       ORDER BY je.embedding <=> ${vectorStr}::vector
       LIMIT ${limit}
     `;

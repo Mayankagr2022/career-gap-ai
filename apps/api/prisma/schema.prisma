@@ -227,6 +227,8 @@ model ResumeEmbedding {
   content    String                 @db.Text
   embedding  Unsupported("vector(768)")
   chunkIndex Int
+  // Model that produced the vector; only vectors of the same model are comparable
+  embeddingModel String             @default("gemini-embedding-001")
   createdAt  DateTime               @default(now())
 
   resume     Resume                 @relation(fields: [resumeId], references: [id], onDelete: Cascade)
@@ -285,6 +287,8 @@ model JobEmbedding {
   content    String                 @db.Text
   embedding  Unsupported("vector(768)")
   chunkIndex Int
+  // Model that produced the vector; only vectors of the same model are comparable
+  embeddingModel String             @default("gemini-embedding-001")
   createdAt  DateTime               @default(now())
 
   job        Job                    @relation(fields: [jobId], references: [id], onDelete: Cascade)

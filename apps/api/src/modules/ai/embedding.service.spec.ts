@@ -2,14 +2,14 @@ import { EmbeddingService, EMBEDDING_DIMENSIONS } from './embedding.service';
 
 const vec = (n: number) => Array.from({ length: n }, () => 0.1);
 
-function makeService(order: string[], opts: { nvidiaKey?: string; geminiKey?: string } = {}) {
+function makeService(order: string[], opts: { nvidiaKey?: string; geminiKey?: string } = {}, prisma: any = {}) {
   const values: Record<string, any> = {
     'ai.embeddingProviderOrder': order,
     'ai.nvidia.apiKey': 'nvidiaKey' in opts ? opts.nvidiaKey : 'nvapi-test',
     'ai.gemini.apiKey': 'geminiKey' in opts ? opts.geminiKey : undefined,
   };
   const config = { get: (k: string, d?: any) => values[k] ?? d } as any;
-  return new EmbeddingService(config, {} as any);
+  return new EmbeddingService(config, prisma);
 }
 
 const okResponse = (dims: number) => ({ ok: true, json: async () => ({ data: [{ embedding: vec(dims) }] }) });
@@ -52,5 +52,42 @@ describe('EmbeddingService', () => {
     await expect(makeService(['nvidia', 'gemini'], { nvidiaKey: undefined }).generateEmbeddings(['a'])).rejects.toThrow(
       'No embedding provider is configured',
     );
+  });
+
+  describe('embedding model tagging', () => {
+    const sqlOf = (call: any[]) => (call[0] as string[]).join('?');
+
+    it('stores the model that produced the vectors with every row', async () => {
+      global.fetch = jest.fn().mockResolvedValue(okResponse(EMBEDDING_DIMENSIONS)) as any;
+      const prisma = { resumeEmbedding: { deleteMany: jest.fn() }, $executeRaw: jest.fn().mockResolvedValue(1) };
+      await makeService(['nvidia'], {}, prisma).storeResumeEmbedding('11111111-1111-1111-1111-111111111111', 'Node.js developer. '.repeat(10));
+
+      const call = prisma.$executeRaw.mock.calls[0];
+      expect(sqlOf(call)).toContain('"embeddingModel"');
+      expect(call.slice(1)).toContain('nvidia/nemotron-3.5-embed-1b');
+    });
+
+    it('reports the fallback model when the first provider failed', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'down' }) as any;
+      const service = makeService(['nvidia', 'gemini'], { geminiKey: 'g-key' });
+      (service as any).embedGemini = jest.fn().mockResolvedValue(Array(EMBEDDING_DIMENSIONS).fill(0.2));
+
+      const { model } = await service.embed(['text']);
+      expect(model).toBe('gemini-embedding-001');
+    });
+
+    it('searches only vectors made by the same model as the query', async () => {
+      global.fetch = jest.fn().mockResolvedValue(okResponse(EMBEDDING_DIMENSIONS)) as any;
+      const prisma = { $queryRaw: jest.fn().mockResolvedValue([]) };
+      const service = makeService(['nvidia'], {}, prisma);
+
+      await service.findSimilarResumes('node developer', 'user-1');
+      await service.findSimilarJobs('node developer', 'user-1');
+
+      for (const call of prisma.$queryRaw.mock.calls) {
+        expect(sqlOf(call)).toContain('"embeddingModel" =');
+        expect(call.slice(1)).toContain('nvidia/nemotron-3.5-embed-1b');
+      }
+    });
   });
 });
