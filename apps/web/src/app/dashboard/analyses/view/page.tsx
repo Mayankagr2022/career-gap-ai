@@ -1,6 +1,7 @@
 'use client';
 
-import { use } from 'react';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft, Loader2, AlertCircle, Lightbulb, Map, BarChart3
@@ -12,8 +13,10 @@ import { AnalysisOverview } from './_components/analysis-overview';
 import { SkillGapsSection } from './_components/skill-gaps-section';
 import { AtsSuggestionsSection } from './_components/ats-suggestions-section';
 
-export default function AnalysisDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+// The id is a query parameter (/dashboard/analyses/view?id=...), not a path segment: a statically exported site
+// (GitHub Pages) cannot have a page for every analysis id.
+function AnalysisDetail() {
+  const id = useSearchParams().get('id') ?? '';
   const { data: analysis, isLoading } = useAnalysis(id);
 
   if (isLoading) {
@@ -128,5 +131,13 @@ export default function AnalysisDetailPage({ params }: { params: Promise<{ id: s
         </>
       )}
     </div>
+  );
+}
+
+export default function AnalysisDetailPage() {
+  return (
+    <Suspense fallback={<div className="h-48 shimmer rounded-2xl" />}>
+      <AnalysisDetail />
+    </Suspense>
   );
 }

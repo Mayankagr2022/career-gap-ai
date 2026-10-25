@@ -39,7 +39,7 @@ export function SecurityTab() {
     mutationFn: () => api.delete('/users/account'),
     onSuccess: () => {
       toast.success('Account deleted');
-      window.location.href = '/';
+      window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/`; // full reload, under the site's base path
     }
   });
 

@@ -194,7 +194,7 @@ export default function AnalysesPage() {
       ) : filteredAnalyses.length > 0 ? (
         <div className="space-y-3">
           {filteredAnalyses.map((analysis) => (
-            <Link key={analysis.id} href={`/dashboard/analyses/${analysis.id}`} className="block">
+            <Link key={analysis.id} href={`/dashboard/analyses/view?id=${analysis.id}`} className="block">
               <motion.div
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}

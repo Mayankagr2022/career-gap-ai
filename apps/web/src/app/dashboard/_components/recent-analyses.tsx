@@ -35,7 +35,7 @@ export function RecentAnalyses() {
           {recentAnalyses.map((analysis) => (
             <Link
               key={analysis.id}
-              href={`/dashboard/analyses/${analysis.id}`}
+              href={`/dashboard/analyses/view?id=${analysis.id}`}
               className="flex items-center gap-3 rounded-xl p-3 transition-colors hover:bg-foreground/5"
             >
               <div className={cn(

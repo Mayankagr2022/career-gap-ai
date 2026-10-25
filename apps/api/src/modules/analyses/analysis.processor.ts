@@ -225,7 +225,7 @@ export class AnalysisProcessor {
         title: 'Analysis Completed',
         message: `Your resume analysis for ${job_data.title || 'the job'} is ready! Match ${Math.round(gapResult.matchScore)}%, ATS ${ats.score}%.`,
         type: NotificationType.SUCCESS,
-        link: `/dashboard/analyses/${analysisId}`,
+        link: `/dashboard/analyses/view?id=${analysisId}`,
       });
 
       this.logger.log(`Analysis ${analysisId} completed in ${processingTime}ms`);
@@ -251,7 +251,7 @@ export class AnalysisProcessor {
         title: 'Analysis Failed',
         message: 'There was an error processing your resume analysis. Please try again.',
         type: NotificationType.ERROR,
-        link: `/dashboard/analyses/${analysisId}`,
+        link: `/dashboard/analyses/view?id=${analysisId}`,
       });
 
       throw error;

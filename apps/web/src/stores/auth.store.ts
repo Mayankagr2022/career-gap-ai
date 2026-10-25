@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getApiUrl } from '@/lib/api-client';
+import { clearTokens } from '@/lib/token-store';
 
 /**
  * The session cookies are HttpOnly, so JavaScript cannot see whether a visitor has a session. This flag remembers the
@@ -84,6 +85,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearAuth: () => {
     setSessionHint(false);
+    clearTokens();
     set({
       user: null,
       isAuthenticated: false,

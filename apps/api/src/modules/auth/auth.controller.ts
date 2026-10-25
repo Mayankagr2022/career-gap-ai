@@ -28,6 +28,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { tokenLifetimeMs } from './token-lifetime';
+import { AuthTokensDto } from './dto/auth-tokens.dto';
 
 /** Brute-force guard for credential endpoints: per-IP, default 10 requests/minute. */
 const AUTH_THROTTLE = { default: { limit: Number(process.env.AUTH_THROTTLE_LIMIT ?? 10), ttl: 60_000 } };
@@ -64,6 +65,41 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
+  private get tokenMode(): boolean {
+    return this.config.get('app.tokenMode', false) === true;
+  }
+
+  /**
+   * Cookie mode (the web app shares the API's address): tokens go in HttpOnly cookies the page cannot read.
+   * Token mode (the web app is on another address, for example GitHub Pages): browsers will not send our cookies to
+   * that address, so the tokens are returned in the response and the web app sends them as a Bearer header.
+   */
+  private startSession(res: Response, result: AuthTokensDto) {
+    if (this.tokenMode) {
+      return {
+        user: result.user,
+        tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken, expiresIn: result.expiresIn },
+      };
+    }
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
+    return { user: result.user };
+  }
+
+  /** End of a Google / LinkedIn sign-in: back to the web app, which is signed in either by cookie or by token. */
+  private finishOAuth(res: Response, tokens: { accessToken: string; refreshToken: string; expiresIn?: number }) {
+    const frontendUrl = String(this.config.get('app.frontendUrl', 'http://localhost:3000')).replace(/\/+$/, '');
+    if (this.tokenMode) {
+      // In the fragment (after #): it is never sent to a server or written to an access log
+      const fragment = new URLSearchParams({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+      res.redirect(`${frontendUrl}/auth/callback/#${fragment.toString()}`);
+      return;
+    }
+    const isProd = this.config.get('NODE_ENV') === 'production';
+    setAuthCookies(res, tokens, isProd);
+    res.redirect(`${frontendUrl}/dashboard`);
+  }
+
   @Public()
   @Throttle(AUTH_THROTTLE)
   @Post('register')
@@ -73,9 +109,7 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.register(dto);
-    const isProd = this.config.get('NODE_ENV') === 'production';
-    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
-    return { user: result.user };
+    return this.startSession(res, result);
   }
 
   @Public()
@@ -88,9 +122,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(user);
-    const isProd = this.config.get('NODE_ENV') === 'production';
-    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
-    return { user: result.user };
+    return this.startSession(res, result);
   }
 
   @Public()
@@ -101,9 +133,7 @@ export class AuthController {
   async refreshToken(@CurrentUser() user: any, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const tokenToRefresh = req.cookies?.refreshToken || req.body?.refreshToken;
     const result = await this.authService.refreshToken(user.id, tokenToRefresh);
-    const isProd = this.config.get('NODE_ENV') === 'production';
-    setAuthCookies(res, { accessToken: result.accessToken, refreshToken: result.refreshToken }, isProd);
-    return { user: result.user };
+    return this.startSession(res, result);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -162,10 +192,7 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   async googleCallback(@CurrentUser() user: any, @Res() res: Response) {
     const tokens = await this.authService.googleLogin(user);
-    const frontendUrl = this.config.get('app.frontendUrl', 'http://localhost:3000');
-    const isProd = this.config.get('NODE_ENV') === 'production';
-    setAuthCookies(res, tokens, isProd);
-    res.redirect(`${frontendUrl}/dashboard`);
+    this.finishOAuth(res, tokens);
   }
 
   // ── LinkedIn OAuth ────────────────────────────────────────────────────────
@@ -182,9 +209,6 @@ export class AuthController {
   @UseGuards(LinkedInAuthGuard)
   async linkedInCallback(@CurrentUser() user: any, @Res() res: Response) {
     const tokens = await this.authService.linkedInLogin(user);
-    const frontendUrl = this.config.get('app.frontendUrl', 'http://localhost:3000');
-    const isProd = this.config.get('NODE_ENV') === 'production';
-    setAuthCookies(res, tokens, isProd);
-    res.redirect(`${frontendUrl}/dashboard`);
+    this.finishOAuth(res, tokens);
   }
 }
