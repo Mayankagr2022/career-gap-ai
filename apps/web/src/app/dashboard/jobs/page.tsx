@@ -5,13 +5,15 @@ import { useForm } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Briefcase, Trash2, MapPin, Building, Calendar,
-  ChevronRight, Loader2, X, Globe, DollarSign
+  ChevronRight, Loader2, X, Globe, DollarSign, FileText
 } from 'lucide-react';
 import { useJobs, useCreateJob, useDeleteJob } from '@/hooks/use-jobs';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { createPortal } from 'react-dom';
+import { JobFileUpload } from './_components/job-file-upload';
 
 function AddJobModal({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'paste' | 'upload'>('paste');
   const { mutate: createJob, isPending } = useCreateJob();
   const { register, handleSubmit, formState: { errors }, watch } = useForm({
     defaultValues: { title: '', company: '', description: '', location: '', remote: false },
@@ -48,6 +50,25 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm font-medium">
+          {([['paste', 'Paste text'], ['upload', 'Upload file']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={cn(
+                'rounded-lg py-2 transition-colors',
+                tab === key ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'upload' ? (
+          <JobFileUpload onCancel={onClose} onDone={onClose} />
+        ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -120,6 +141,7 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </form>
+        )}
       </motion.div>
     </motion.div>
   );
@@ -181,6 +203,13 @@ export default function JobsPage() {
                   ) : (
                     <><MapPin className="h-3 w-3" /> {job.location}</>
                   )}
+                </div>
+              )}
+
+              {job.sourceFilename && (
+                <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                  <FileText className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{job.sourceFilename}</span>
                 </div>
               )}
 

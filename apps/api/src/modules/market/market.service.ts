@@ -3,6 +3,7 @@ import { Prisma, SkillTrend } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { skillSlug } from '../skills/skills.service';
+import { MarketStatsService } from './market-stats.service';
 
 const statInclude = {
   skill: {
@@ -30,9 +31,11 @@ export class MarketService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
+    private readonly marketStats: MarketStatsService,
   ) {}
 
   private async query(args: Prisma.SkillMarketStatFindManyArgs) {
+    await this.marketStats.ensureFresh();
     const stats = await this.prisma.skillMarketStat.findMany({ ...args, include: statInclude });
     return stats.map((s) => toMarketDto(s as StatWithSkill));
   }

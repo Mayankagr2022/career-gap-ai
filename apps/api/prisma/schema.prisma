@@ -155,7 +155,7 @@ model SkillMarketStat {
   averageSalary Float?
   jobCount      Int         @default(0)
   topCompanies  String[]
-  source        String      @default("seed")
+  source        String      @default("user-data")
   lastUpdated   DateTime    @default(now())
   createdAt     DateTime    @default(now())
 
@@ -251,6 +251,8 @@ model Job {
   education       String?
   jobType         String? // FULL_TIME, PART_TIME, CONTRACT, etc.
   industry        String?
+  /// Set when the job was created from an uploaded file; such jobs keep their description read-only.
+  sourceFilename  String?
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

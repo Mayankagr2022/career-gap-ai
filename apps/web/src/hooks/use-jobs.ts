@@ -41,6 +41,47 @@ export function useCreateJob() {
   });
 }
 
+export interface JobUploadDraft {
+  draftId: string;
+  filename: string;
+  /** Rule-based guesses from the file text; null when nothing could be detected. */
+  title: string | null;
+  company: string | null;
+  description: string;
+  expiresInSeconds: number;
+}
+
+/** Step 1: extract the file's text (no AI) and get a draft to review. Nothing is saved yet. */
+export function useUploadJobFile() {
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return api.upload<JobUploadDraft>('/jobs/upload', formData);
+    },
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Upload failed'));
+    },
+  });
+}
+
+/** Step 2: save the draft with the confirmed title and company; the AI parse runs here. */
+export function useConfirmJobUpload() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ draftId, title, company }: { draftId: string; title: string; company: string }) =>
+      api.post<any>(`/jobs/upload/${draftId}/confirm`, { title, company }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast.success('Job added');
+    },
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to save job'));
+    },
+  });
+}
+
 export function useDeleteJob() {
   const queryClient = useQueryClient();
 

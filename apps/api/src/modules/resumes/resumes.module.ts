@@ -4,9 +4,11 @@ import { ResumesController } from './resumes.controller';
 import { ResumesService } from './resumes.service';
 import { ResumeProcessor } from './resume.processor';
 import { ResumeParserService } from './resume-parser.service';
+import { DocumentsModule } from '../../common/documents/documents.module';
 
 @Module({
   imports: [
+    DocumentsModule,
     BullModule.registerQueue({
       name: 'resume-processing',
     }),

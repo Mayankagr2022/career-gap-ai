@@ -12,25 +12,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
 import { ResumeParserService } from './resume-parser.service';
 import { ResumeStatus } from '@prisma/client';
-
-const PDF_MIME = 'application/pdf';
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+import { decodeFilename, detectMimeType } from '../../common/documents/document-mime';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-// Browsers (notably on Windows) sometimes send an empty or generic mimetype, so the type is
-// derived from the file's magic bytes instead of trusting the client-supplied header.
-function detectMimeType(buffer: Buffer): string | null {
-  if (buffer.subarray(0, 5).toString('latin1') === '%PDF-') return PDF_MIME;
-  if (buffer[0] === 0x50 && buffer[1] === 0x4b) return DOCX_MIME; // zip container
-  return null;
-}
-
-// Multer decodes multipart filenames as latin1; recover UTF-8 names such as "résumé.pdf"
-function decodeFilename(name: string): string {
-  const decoded = Buffer.from(name, 'latin1').toString('utf8');
-  return decoded.includes('�') ? name : decoded;
-}
 
 @Injectable()
 export class ResumesService {

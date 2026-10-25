@@ -1,11 +1,14 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param,
-  UseGuards, ParseUUIDPipe, HttpCode, HttpStatus
+  UseGuards, UseInterceptors, UploadedFile, ParseUUIDPipe, HttpCode, HttpStatus
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { JobsService } from './jobs.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
+import { JobsService, MAX_JD_FILE_SIZE } from './jobs.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
+import { ConfirmUploadedJobDto } from './dto/confirm-uploaded-job.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -20,6 +23,29 @@ export class JobsController {
   @ApiOperation({ summary: 'Create a job with AI-parsed JD' })
   create(@CurrentUser('id') userId: string, @Body() dto: CreateJobDto) {
     return this.jobsService.create(userId, dto);
+  }
+
+  @Post('upload')
+  @ApiOperation({ summary: 'Upload a job description file (PDF, DOCX or TXT) and get a draft to review' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_JD_FILE_SIZE },
+    }),
+  )
+  upload(@CurrentUser('id') userId: string, @UploadedFile() file: Express.Multer.File) {
+    return this.jobsService.uploadFile(userId, file);
+  }
+
+  @Post('upload/:draftId/confirm')
+  @ApiOperation({ summary: 'Confirm an uploaded job description: set title and company, then AI-parse and save' })
+  confirmUpload(
+    @Param('draftId', ParseUUIDPipe) draftId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ConfirmUploadedJobDto,
+  ) {
+    return this.jobsService.confirmUpload(userId, draftId, dto);
   }
 
   @Get()
