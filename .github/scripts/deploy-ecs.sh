@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Roll a new image version out to ECS. Called by .github/workflows/main.yml after the images are pushed.
+# Roll a new image version out to ECS. Called by .github/workflows/deploy-aws.yml after the images are pushed.
 #
 #   1. Register new task definition revisions that point at the new images.
 #   2. Run database migrations as a one-off task of the new API image. Stop here if they fail, so a broken

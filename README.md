@@ -379,13 +379,16 @@ Unit tests (Jest, no database needed) cover the job title/company detection, fil
 8. The API listens for load balancer checks on `GET /api/v1/health` (process is up) and `GET /api/v1/health/ready` (database reachable).
    Behind a load balancer it trusts one proxy hop by default in production (`TRUST_PROXY_HOPS`), so rate limits apply per user and not per balancer.
 
-### Deploying to AWS with GitHub Actions
+### Deploying with GitHub Actions
 
-`.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also deployed to
-**AWS ECS Fargate** after someone approves the `production` environment: it builds the API and web Docker images (`apps/api/Dockerfile`, `apps/web/Dockerfile`),
-runs the database migrations as a one-off task, rolls the services out, and rolls back automatically if the new version does not become healthy.
-The AWS resources (VPC, RDS PostgreSQL with pgvector, ElastiCache Redis, S3, ECR, load balancer, GitHub OIDC role) are defined in [`infra/`](infra/README.md),
-which also has the one-time setup steps and the repository variables the workflow needs.
+`.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also deployed to a
+**single server running Docker Compose** after someone approves the `production` environment: it builds the API and web images
+(`apps/api/Dockerfile`, `apps/web/Dockerfile`), pushes them to the GitHub Container Registry, runs the database migrations, starts the new version behind
+Caddy (automatic HTTPS) and switches back to the previous version if the new one does not become healthy.
+The server files, the one-time setup, the GitHub secrets and variables, backups and day-to-day commands are in [`deploy/README.md`](deploy/README.md).
+
+An AWS alternative (ECS Fargate, RDS, ElastiCache, load balancer, defined in CDK) is in [`infra/`](infra/README.md); it only runs when started by hand from the
+*Deploy to AWS (optional)* workflow.
 
 ## Troubleshooting
 

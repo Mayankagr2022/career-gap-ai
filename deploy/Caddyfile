@@ -1,0 +1,25 @@
+# One host name serves both apps: /api/* goes to the API, everything else to the web app.
+# Caddy obtains and renews the HTTPS certificate by itself (the domain must point at this server
+# and ports 80 and 443 must be reachable). With DOMAIN=localhost it uses a local test certificate.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	@api path /api/*
+	handle @api {
+		# Resume uploads are limited to 10 MB by the API; reject anything much larger early
+		request_body {
+			max_size 12MB
+		}
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

@@ -11,6 +11,7 @@
 .vscode
 .claude
 infra
+deploy
 **/*.log
 
 # Environment files are never baked into an image; configuration comes from the task/container environment

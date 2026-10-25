@@ -1,7 +1,10 @@
-# CareerGap AI infrastructure
+# CareerGap AI infrastructure (AWS, optional)
+
+> The default deployment is a single server with Docker Compose, described in [`deploy/README.md`](../deploy/README.md). This folder is the
+> managed AWS alternative; it is deployed by hand with the *Deploy to AWS (optional)* workflow ([`deploy-aws.yml`](../.github/workflows/deploy-aws.yml)).
 
 AWS CDK (TypeScript) for running CareerGap AI on **ECS Fargate**, deployed by GitHub Actions
-([`.github/workflows/main.yml`](../.github/workflows/main.yml)).
+([`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)).
 
 ```
                        Internet
@@ -74,12 +77,12 @@ Secrets are injected into the containers by ECS at start-up; none are in the tem
 
    No AWS keys are stored in GitHub.
 
-5. **Deploy.** Merge to `main` (or run the workflow manually), then approve the `production` environment. The pipeline checks, builds and pushes both images,
+5. **Deploy.** Run the *Deploy to AWS (optional)* workflow from the Actions tab, then approve the `production` environment. The pipeline checks, builds and pushes both images,
    runs the database migrations as a one-off task (this creates the `vector` extension), then rolls out the services and waits for them to be healthy.
 
 ## Everyday use
 
-- **Application deploys** happen on every push to `main` that passes the checks. Nothing else is needed.
+- **Application deploys** run whenever you start the *Deploy to AWS (optional)* workflow.
 - **Infrastructure changes**: edit the stack, then `cdk diff` and `cdk deploy` with the same `-c` values as before, **without** `initialDeploy`.
   The running version is kept because task definitions read the tag from `/careergap/image-tag`.
 - **Rollback**: a failing rollout is rolled back automatically and the workflow fails. To go back to an earlier version later, re-run the workflow for that commit
