@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Brain, ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useResetPassword } from '@/hooks/use-auth';
 import { useSearchParams } from 'next/navigation';
+import { passwordSchema } from '@career-gap-ai/shared';
 
 function ResetPasswordForm() {
   const [password, setPassword] = useState('');
@@ -27,8 +28,9 @@ function ResetPasswordForm() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+    const strength = passwordSchema.safeParse(password);
+    if (!strength.success) {
+      setError(strength.error.issues[0].message);
       return;
     }
 

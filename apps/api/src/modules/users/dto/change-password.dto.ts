@@ -1,5 +1,6 @@
 import { IsString, MinLength, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { PASSWORD_MESSAGE, PASSWORD_PATTERN } from '../../../common/validation/password';
 
 export class ChangePasswordDto {
   @ApiProperty()
@@ -9,8 +10,6 @@ export class ChangePasswordDto {
   @ApiProperty()
   @IsString()
   @MinLength(8)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message: 'Password must contain uppercase, lowercase, number, and special character',
-  })
+  @Matches(PASSWORD_PATTERN, { message: PASSWORD_MESSAGE })
   newPassword: string;
 }

@@ -8,10 +8,11 @@ import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
+import { passwordSchema as sharedPasswordSchema } from '@career-gap-ai/shared';
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(8, 'Must be at least 8 characters'),
+  newPassword: sharedPasswordSchema,
   confirmPassword: z.string()
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "Passwords don't match",
