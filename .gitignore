@@ -14,3 +14,7 @@ uploads/
 
 # Claude Code personal overrides
 .claude/settings.local.json
+
+# TypeScript incremental build caches
+*.tsbuildinfo
+.tsbuildinfo
