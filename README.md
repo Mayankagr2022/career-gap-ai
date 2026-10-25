@@ -177,7 +177,7 @@ The API loads `.env.local` then `.env` in development and `.env.production` when
 | `FRONTEND_URL` | Allowed CORS origin / OAuth redirects | `http://localhost:3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/career_gap_ai?schema=public` |
 | `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT` | Redis connection | `localhost:6379` |
-| `JWT_SECRET`, `JWT_EXPIRES_IN` | Access-token signing / TTL | TTL `7d` |
+| `JWT_SECRET`, `JWT_EXPIRES_IN` | Access-token signing / TTL (short, so a copied token stops working soon after logout; the browser refreshes it silently) | TTL `15m` |
 | `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN` | Refresh-token signing / TTL | TTL `30d` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | Google OAuth | callback `…/api/v1/auth/google/callback` |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_CALLBACK_URL` | LinkedIn OAuth | callback `…/api/v1/auth/linkedin/callback` |
@@ -223,7 +223,7 @@ Maintenance scripts (run after `build`; each accepts `-- --dry-run` to preview):
 - `ats:backfill`: recompute ATS scores for existing resumes and analyses with the deterministic scorer (`src/common/scoring/ats-score.ts`). The resume score is "ATS readiness" (format and completeness); an analysis' ATS score is 40% format and 60% keyword match against the job.
 - `jobs:normalize-skills`: split phrase-style skills stored on older jobs ("Strong proficiency in Go (concurrency, channels)") into one skill per entry, so market stats and keyword matching count real skills. Run `ats:backfill` afterwards.
 
-**Market trends** are derived from the jobs in the database: demand is the share of active jobs naming a skill, and stats are published once at least 5 jobs exist (`GET /market/overview` reports the count). "Rising" and "declining" compare against a snapshot at least 7 days old, so until then the list shows the most in-demand skills.
+**Market trends** are derived from the jobs in the database: demand is the share of active jobs naming a skill, and stats are published once at least 5 jobs exist (`GET /market/overview` reports the count). "Rising" and "declining" compare each skill with its snapshot closest to a week ago (at least a day old, so trends start after a day), and need a change of at least two jobs and 10% of its share, so small data sets stay stable; until then the list shows the most in-demand skills.
 
 ### `apps/web`
 
@@ -252,7 +252,7 @@ Because the text lives on the server, a client cannot change the description or 
 
 - **Demand score** – share of active jobs that list the skill, scaled 0–10.
 - **Average salary** – mean midpoint of USD salary ranges (empty if no job gives one).
-- **Trend** – demand now vs. the snapshot from at least 7 days ago (±10% = rising/declining; `STABLE` until a week-old snapshot exists).
+- **Trend** – demand now vs. the snapshot closest to a week ago (at least a day old). A skill is rising/declining only when its share moves by 10% and its job count by at least 2; a skill that is new since the snapshot counts as rising once it appears in 2 jobs. `STABLE` until a day of history exists.
 - **Top companies** – only companies named by at least 2 jobs, so one user's entry is never exposed.
 - One snapshot per skill per day is written to `skill_market_snapshots`.
 
@@ -382,7 +382,7 @@ Unit tests (Jest, no database needed) cover the job title/company detection, fil
 ### Deploying with GitHub Actions
 
 `.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also deployed to a
-**single server running Docker Compose** after someone approves the `production` environment: it builds the API and web images
+**single server running Docker Compose** after someone approves the `production` environment (the deploy job is skipped until the repository variable `DEPLOY_ENABLED` is `true`): it builds the API and web images
 (`apps/api/Dockerfile`, `apps/web/Dockerfile`), pushes them to the GitHub Container Registry, runs the database migrations, starts the new version behind
 Caddy (automatic HTTPS) and switches back to the previous version if the new one does not become healthy.
 The server files, the one-time setup, the GitHub secrets and variables, backups and day-to-day commands are in [`deploy/README.md`](deploy/README.md).

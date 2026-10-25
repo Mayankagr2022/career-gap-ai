@@ -96,6 +96,6 @@ Secrets are injected into the containers by ECS at start-up; none are in the tem
   (see `apps/api/docker-entrypoint.sh`), so no composite secret has to be stored.
 - **Redis traffic is not encrypted in transit.** The queue client does not use TLS; Redis sits in isolated subnets and accepts connections only from the API tasks.
 - **Cost drivers**: NAT gateways, the load balancer, RDS, ElastiCache and Fargate tasks. `production=false` and `natGateways=1` reduce them for testing.
-- **The API image is large** because it keeps the build tooling and the Prisma CLI (needed to run migrations in the same image). Slimming it is a possible follow-up.
+- **The API image is about 0.9 GB** (the web image about 0.45 GB). It holds only the API's production dependencies plus the Prisma CLI, which the same image uses to run migrations. Most of what remains is real dependencies, the largest being AWS SDK v2 (100 MB); moving to the modular v3 SDK would save roughly that much.
 - **Not included**: autoscaling, WAF, alarms and dashboards, a staging environment, and DNS records. They can be added to the stack.
 - **Deleting**: the stack has termination protection. With `production=true` the database, bucket, repositories and logs are retained when the stack is destroyed.
