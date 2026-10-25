@@ -69,8 +69,9 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:?Set AWS_S3_BUCKET in .env}
       AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID in .env}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY in .env}
+      # Leave both empty on an AWS server whose instance role can use the bucket (see deploy/aws/server.yaml)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
 
       AI_PROVIDER_ORDER: ${AI_PROVIDER_ORDER:-nvidia,gemini}
       AI_EMBEDDING_PROVIDER_ORDER: ${AI_EMBEDDING_PROVIDER_ORDER:-nvidia,gemini}
