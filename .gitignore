@@ -24,4 +24,5 @@ cdk.out
 
 # Static export for GitHub Pages
 .next-export
+.next-check
 apps/web/out

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, LayoutDashboard, FileText, Briefcase, BarChart3,
   Lightbulb, Map, TrendingUp, Settings, MessageSquare,
-  LogOut, X, Loader2
+  LogOut, X, Loader2, ShieldCheck
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useLogout } from '@/hooks/use-auth';
@@ -41,7 +41,15 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
 
   if (!user) return null;
 
-  const items = [...NAV_ITEMS, { href: '/dashboard/settings', icon: Settings, label: 'Settings', exact: false }];
+  // Admins get a way into the admin console from here; everyone else never sees it
+  const isAdmin = user.role === 'ADMIN';
+  const items: { href: string; icon: React.ComponentType<{ className?: string }>; label: string; exact?: boolean; admin?: boolean }[] = [
+    ...NAV_ITEMS,
+    ...(isAdmin ? [{ href: '/admin', icon: ShieldCheck, label: 'Admin Console', exact: false, admin: true }] : []),
+    { href: '/dashboard/settings', icon: Settings, label: 'Settings', exact: false },
+  ];
+  // The first entry after the main links starts the lower group, below a divider
+  const firstLower = NAV_ITEMS.length;
 
   return (
     <>
@@ -97,7 +105,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
             const active = isNavActive(pathname, item.href, item.exact);
             return (
               <div key={item.href}>
-                {item.href === '/dashboard/settings' && (
+                {idx === firstLower && (
                   <div className="mx-2 my-3 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
                 )}
                 <Link
@@ -105,7 +113,11 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
                   title={item.label}
                   className={cn(
                     'relative flex items-center gap-3 overflow-hidden rounded-xl px-[13px] py-2.5 text-sm font-medium transition-colors duration-200',
-                    active ? 'text-white' : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
+                    item.admin
+                      ? 'text-emerald-300 hover:bg-emerald-400/10 hover:text-emerald-200'
+                      : active
+                        ? 'text-white'
+                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
                   )}
                   style={{ animationDelay: `${idx * 30}ms` }}
                 >
@@ -121,6 +133,11 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
                   </span>
                   <span className="relative z-10 whitespace-nowrap opacity-100 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                     {item.label}
+                    {item.admin && (
+                      <span className="ml-2 rounded border border-emerald-400/40 px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-emerald-300">
+                        admin
+                      </span>
+                    )}
                   </span>
                 </Link>
               </div>

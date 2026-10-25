@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { Brain, ShieldAlert } from 'lucide-react';
 import { useAccess } from '@/hooks/use-access';
+import { currentAppPath, homeFor, loginUrl } from '@/lib/auth-redirect';
 
 interface RequireRoleProps {
   role: string;
@@ -15,15 +17,23 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const { hasRole, isInitialized, isAuthenticated } = useAccess();
   const router = useRouter();
 
+  const { user } = useAccess();
+  const toldUser = useRef(false);
+
   useEffect(() => {
-    if (isInitialized) {
-      if (!isAuthenticated) {
-        router.push('/auth/login');
-      } else if (!hasRole(role)) {
-        router.push('/dashboard');
+    if (!isInitialized) return;
+    if (!isAuthenticated) {
+      // Not signed in: sign in first, then come back to this page
+      router.replace(loginUrl(currentAppPath()));
+    } else if (!hasRole(role)) {
+      // Signed in but not allowed: say why, then go to the page they can use
+      if (!toldUser.current) {
+        toldUser.current = true;
+        toast.error('You do not have permission to open that page.', { id: 'forbidden-page' });
       }
+      router.replace(homeFor(user?.role));
     }
-  }, [isInitialized, isAuthenticated, hasRole, role, router]);
+  }, [isInitialized, isAuthenticated, hasRole, role, router, user?.role]);
 
   if (!isInitialized || !isAuthenticated || !hasRole(role)) {
     const denied = isInitialized && isAuthenticated && !hasRole(role);

@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 import { getSessionHint, useAuthStore } from '@/stores/auth.store';
 import { TOKEN_MODE, clearTokens, getTokens, setTokens } from '@/lib/token-store';
 
@@ -80,8 +81,11 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError as AxiosError);
+        // Say so only if they were signed in; a first-time visitor with no session has nothing to "expire"
+        const hadSession = getSessionHint() === '1';
         clearTokens();
         useAuthStore.getState().clearAuth();
+        if (hadSession) toast.error('Your session has expired. Please sign in again.', { id: 'session-expired' });
         // Surface the original failure, not the (less useful) refresh failure
         return Promise.reject(error);
       } finally {
@@ -96,6 +100,11 @@ apiClient.interceptors.response.use(
 // Pulls a user-facing message out of an API error; the API returns `message` as an array but
 // middleware errors and network failures may not.
 export const getErrorMessage = (error: any, fallback: string): string => {
+  const status = error?.response?.status;
+  if (status === 429) return 'Too many attempts. Please wait a minute and try again.';
+  if (status === 403) return 'You do not have permission to do that.';
+  // No response at all: the API is down or the device is offline
+  if (error && !error.response && error.request) return 'Cannot reach the server. Check your connection and try again.';
   const message = error?.response?.data?.message;
   if (Array.isArray(message)) return message[0] || fallback;
   if (typeof message === 'string' && message) return message;

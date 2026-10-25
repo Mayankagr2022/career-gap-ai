@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
-# Pre-commit build check. Only builds what the staged files can affect, and never touches a running dev server:
-#   - web:    `NEXT_OUTPUT=export next build` (the real GitHub Pages build; type-checks and lints) into .next-export
+# Pre-commit build check. Only builds what the staged files can affect, and never disturbs a running dev server:
+#   - web:    `next build` compiled into its own folder (.next-check). A static-export build can NOT be used here: it always
+#             compiles into .next, which is the folder `next dev` serves from, and overwriting it makes the dev server
+#             return 500 errors. CI's pages job still runs the static-export build.
 #   - api:    `tsc --noEmit` (same compile check CI runs); no `nest build`, so the dev watcher's dist/ is left alone
 #   - shared: built first, because the api and web import its compiled output
 set -e
@@ -32,8 +34,8 @@ if [ "$api" = "1" ] || [ "$shared" = "1" ]; then
 fi
 
 if [ "$web" = "1" ] || [ "$shared" = "1" ]; then
-  echo "pre-commit: building the web app (static export build, into .next-export)"
-  NEXT_OUTPUT=export pnpm --filter @career-gap-ai/web exec next build
+  echo "pre-commit: building the web app (into .next-check)"
+  NEXT_DIST_DIR=.next-check pnpm --filter @career-gap-ai/web exec next build
 fi
 
 echo "pre-commit: all checks passed"

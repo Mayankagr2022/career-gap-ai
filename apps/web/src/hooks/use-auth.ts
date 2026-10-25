@@ -3,6 +3,7 @@ import { api, apiClient, getErrorMessage } from '@/lib/api-client';
 import { useAuthStore, setSessionHint } from '@/stores/auth.store';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { postLoginTarget } from '@/lib/auth-redirect';
 import { TOKEN_MODE, clearTokens, getTokens, setTokens, type StoredTokens } from '@/lib/token-store';
 
 interface RegisterData { name: string; email: string; password: string; }
@@ -29,11 +30,8 @@ export function useRegister() {
     onSuccess: (data) => {
       setAuth(data.user);
       toast.success('Welcome to CareerGap AI!');
-      if (data.user.role === 'ADMIN') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
-      }
+      // Back to the page they were heading to (?next=), otherwise the home for their role
+      router.replace(postLoginTarget(data.user.role));
     },
     onError: (error: any) => {
       toast.error(getErrorMessage(error, 'Registration failed'));
@@ -51,11 +49,8 @@ export function useLogin() {
     onSuccess: (data) => {
       setAuth(data.user);
       toast.success(`Welcome back, ${data.user.name}!`);
-      if (data.user.role === 'ADMIN') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
-      }
+      // Back to the page they were heading to (?next=), otherwise the home for their role
+      router.replace(postLoginTarget(data.user.role));
     },
     onError: (error: any) => {
       toast.error(getErrorMessage(error, 'Invalid email or password'));

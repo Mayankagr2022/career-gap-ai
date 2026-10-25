@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import dynamic from 'next/dynamic';
 import { BottomNav } from './_components/bottom-nav';
+import { currentAppPath, loginUrl } from '@/lib/auth-redirect';
 
 const Sidebar = dynamic(() => import('./_components/sidebar').then(mod => mod.Sidebar), {
   loading: () => <div className="hidden w-[88px] shrink-0 md:block" />
@@ -28,7 +29,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Redirect if not authenticated after initialization check
   useEffect(() => {
     if (isInitialized && !isAuthenticated) {
-      router.push('/auth/login');
+      // Remember where they were going so sign-in brings them back here
+      router.replace(loginUrl(currentAppPath()));
     }
   }, [isInitialized, isAuthenticated, router]);
 
