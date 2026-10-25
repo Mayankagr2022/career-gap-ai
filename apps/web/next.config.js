@@ -20,9 +20,13 @@ const nextConfig = {
     output: 'export',
     // /auth/login/index.html: works on a static host without rewrite rules
     trailingSlash: true,
-    // Its own build folder, so exporting never disturbs a running dev server
+    // Where the finished static files are written. The build itself still compiles into .next, so do not run an
+    // export build while `next dev` is running (check builds use NEXT_DIST_DIR below instead).
     distDir: '.next-export',
   }),
+  // Check builds (the pre-commit hook) set NEXT_DIST_DIR so they compile in their own folder. Without it, a build
+  // compiles into .next, which is the folder a running `next dev` is serving from, and the dev server starts failing.
+  ...(process.env.NEXT_DIST_DIR && { distDir: process.env.NEXT_DIST_DIR }),
   ...(basePath && { basePath }),
   transpilePackages: ['@career-gap-ai/shared'],
   images: exportSite
