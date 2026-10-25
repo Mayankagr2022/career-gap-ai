@@ -1,9 +1,10 @@
-import { Controller, Get, Put, Body, Delete, UseGuards, HttpCode, HttpStatus, Post, UseInterceptors, UploadedFile, Param, Redirect, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Put, Body, Delete, UseGuards, HttpCode, HttpStatus, Post, UseInterceptors, UploadedFile, Param, Redirect, Res, BadRequestException, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UsersService } from './users.service';
+import { AdminAnalyticsService } from './admin-analytics.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -17,7 +18,10 @@ import { Role } from '@prisma/client';
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly adminAnalytics: AdminAnalyticsService,
+  ) {}
 
   @Get('profile')
   @ApiOperation({ summary: 'Get current user profile' })
@@ -39,6 +43,30 @@ export class UsersController {
   @ApiOperation({ summary: 'Get global admin stats' })
   getAdminStats() {
     return this.usersService.getAdminStats();
+  }
+
+  @Get('admin/analytics')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Time series, distributions and AI usage for the admin dashboard (Admin only)' })
+  getAdminAnalytics(@Query('days') days?: string) {
+    return this.adminAnalytics.getAnalytics(Number(days ?? 30));
+  }
+
+  @Get('admin/audit')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Paged audit log (Admin only)' })
+  getAuditLog(
+    @Query('limit') limit?: string,
+    @Query('skip') skip?: string,
+    @Query('action') action?: string,
+  ) {
+    return this.adminAnalytics.getAuditLog({
+      limit: Number(limit ?? 50),
+      skip: Number(skip ?? 0),
+      action: action?.slice(0, 40) || undefined,
+    });
   }
 
   @Put('admin/:id/role')

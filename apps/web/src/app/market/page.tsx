@@ -14,8 +14,8 @@ export default function PublicMarketPage() {
   return (
     <div className="min-h-screen flex flex-col overflow-hidden bg-background">
       <Navigation />
-      <main className="flex-1 pt-24 pb-16 px-6 mx-auto w-full max-w-7xl">
-        <MarketTrends />
+      <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 px-4 pb-16 pt-24 sm:px-6">
+        <MarketTrends standalone />
       </main>
       <Footer />
     </div>

@@ -1,19 +1,19 @@
-import type { Metadata } from 'next';
-import { Inter, Outfit, JetBrains_Mono } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Manrope, Space_Grotesk, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import NextTopLoader from 'nextjs-toploader';
 import { Providers } from './providers';
 import './globals.css';
 
-const inter = Inter({
+const manrope = Manrope({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-sans',
   display: 'swap',
 });
 
-const outfit = Outfit({
+const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
-  variable: '--font-outfit',
+  variable: '--font-display',
   display: 'swap',
 });
 
@@ -61,24 +61,38 @@ export const metadata: Metadata = {
   },
 };
 
+// Dark-only app: the browser chrome (address bar, overscroll) follows the page colour
+export const viewport: Viewport = {
+  themeColor: '#07050f',
+  colorScheme: 'dark',
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
-      suppressHydrationWarning
+      className={`dark ${manrope.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
     >
       <body>
-        <NextTopLoader color="#8b5cf6" showSpinner={false} />
+        <NextTopLoader
+          color="#a78bfa"
+          height={3}
+          showSpinner={false}
+          shadow="0 0 12px #a78bfa,0 0 6px #ec4899"
+        />
         <Providers>
           {children}
           <Toaster
             position="top-right"
+            theme="dark"
             toastOptions={{
               style: {
-                background: 'hsl(220, 25%, 9%)',
-                border: '1px solid hsl(220, 20%, 15%)',
-                color: 'hsl(220, 10%, 95%)',
+                background: 'hsl(252, 28%, 8%)',
+                border: '1px solid hsl(262, 60%, 30%)',
+                color: 'hsl(240, 25%, 96%)',
+                boxShadow: '0 12px 40px -10px hsl(262 90% 66% / 0.4)',
               },
             }}
           />

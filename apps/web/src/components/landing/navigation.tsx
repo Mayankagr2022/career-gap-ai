@@ -1,94 +1,124 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Brain, ArrowRight, Menu, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowRight, Menu, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { BrandLogo } from '@/components/brand-logo';
+import { cn } from '@/lib/utils';
 
 export function Navigation() {
   const { isAuthenticated } = useAuthStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // On the home page use in-page anchors (#features).
   // On any other page prefix with / so the browser navigates home first (/#features).
-  const anchorHref = (id: string) =>
-    pathname === '/' ? `#${id}` : `/#${id}`;
+  const anchorHref = (id: string) => (pathname === '/' ? `#${id}` : `/#${id}`);
+
+  const links = [
+    { href: anchorHref('features'), label: 'Features' },
+    { href: anchorHref('how-it-works'), label: 'How it Works' },
+    { href: anchorHref('testimonials'), label: 'Stories' },
+    { href: '/market', label: 'Market Trends' },
+  ];
 
   return (
-    <nav className="fixed top-0 z-50 w-full border-b border-foreground/[0.05] bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-violet-500">
-            <Brain className="h-4 w-4 text-white" />
-          </div>
-          <span className="font-display text-lg font-bold gradient-text">CareerGap AI</span>
-        </Link>
+    <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-6">
+      <nav
+        className={cn(
+          'mx-auto max-w-6xl rounded-2xl border transition-all duration-300',
+          scrolled || isMobileMenuOpen
+            ? 'border-white/10 bg-background/70 shadow-[0_20px_50px_-20px_hsl(262_90%_40%/0.6)] backdrop-blur-2xl'
+            : 'border-transparent bg-transparent'
+        )}
+      >
+        <div className="flex items-center justify-between px-4 py-3 sm:px-5">
+          <BrandLogo />
 
-        <div className="hidden items-center gap-8 md:flex">
-          <Link href={anchorHref('features')} className="text-sm text-muted-foreground transition-colors hover:text-foreground">Features</Link>
-          <Link href={anchorHref('how-it-works')} className="text-sm text-muted-foreground transition-colors hover:text-foreground">How it Works</Link>
-          <Link href={anchorHref('testimonials')} className="text-sm text-muted-foreground transition-colors hover:text-foreground">Stories</Link>
-          <Link href="/market" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Market Trends</Link>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-          {isAuthenticated ? (
-            <Link href="/dashboard" className="hidden sm:flex btn-primary py-2 px-5 text-sm">
-              Dashboard <ArrowRight className="h-4 w-4" />
-            </Link>
-          ) : (
-            <>
-              <Link href="/auth/login" className="hidden sm:flex btn-secondary py-2 px-5 text-sm">
-                Sign In
+          <div className="hidden items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] p-1 md:flex">
+            {links.map((l) => (
+              <Link
+                key={l.label}
+                href={l.href}
+                className="rounded-full px-4 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              >
+                {l.label}
               </Link>
-              <Link href="/auth/register" className="hidden sm:flex btn-primary py-2 px-5 text-sm">
-                Get Started
-              </Link>
-            </>
-          )}
-
-          {/* Mobile menu toggle */}
-          <button
-            className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:bg-foreground/5 transition-colors"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          >
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile menu dropdown */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-foreground/[0.05] bg-background/95 backdrop-blur-xl px-6 py-4 space-y-4">
-          <div className="flex flex-col space-y-3">
-            <Link onClick={() => setIsMobileMenuOpen(false)} href={anchorHref('features')} className="text-sm font-medium text-muted-foreground hover:text-foreground py-2 border-b border-foreground/[0.05]">Features</Link>
-            <Link onClick={() => setIsMobileMenuOpen(false)} href={anchorHref('how-it-works')} className="text-sm font-medium text-muted-foreground hover:text-foreground py-2 border-b border-foreground/[0.05]">How it Works</Link>
-            <Link onClick={() => setIsMobileMenuOpen(false)} href={anchorHref('testimonials')} className="text-sm font-medium text-muted-foreground hover:text-foreground py-2 border-b border-foreground/[0.05]">Stories</Link>
-            <Link onClick={() => setIsMobileMenuOpen(false)} href="/market" className="text-sm font-medium text-muted-foreground hover:text-foreground py-2 border-b border-foreground/[0.05]">Market Trends</Link>
+            ))}
           </div>
 
-          <div className="flex flex-col gap-3 pt-2">
+          <div className="flex items-center gap-2">
             {isAuthenticated ? (
-              <Link href="/dashboard" className="btn-primary py-3 w-full justify-center">
-                Go to Dashboard
+              <Link href="/dashboard" className="btn-primary hidden px-5 py-2 text-sm sm:inline-flex">
+                Dashboard <ArrowRight className="h-4 w-4" />
               </Link>
             ) : (
               <>
-                <Link href="/auth/login" className="btn-secondary py-3 w-full justify-center">
+                <Link href="/auth/login" className="hidden px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-flex">
                   Sign In
                 </Link>
-                <Link href="/auth/register" className="btn-primary py-3 w-full justify-center">
-                  Get Started Free
+                <Link href="/auth/register" className="btn-primary hidden px-5 py-2 text-sm sm:inline-flex">
+                  Get Started
                 </Link>
               </>
             )}
+
+            <button
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-muted-foreground transition-colors hover:text-foreground md:hidden"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            >
+              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
         </div>
-      )}
-    </nav>
+
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden md:hidden"
+            >
+              <div className="space-y-1 border-t border-white/[0.08] px-4 py-4">
+                {links.map((l) => (
+                  <Link
+                    key={l.label}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    href={l.href}
+                    className="block rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+                <div className="flex flex-col gap-2 pt-3">
+                  {isAuthenticated ? (
+                    <Link href="/dashboard" className="btn-primary w-full py-3">Go to Dashboard</Link>
+                  ) : (
+                    <>
+                      <Link href="/auth/login" className="btn-secondary w-full py-3">Sign In</Link>
+                      <Link href="/auth/register" className="btn-primary w-full py-3">Get Started Free</Link>
+                    </>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
+    </header>
   );
 }

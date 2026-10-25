@@ -35,13 +35,10 @@ export function RegisterForm() {
     <>
       <OAuthButtons mode="register" />
 
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs text-muted-foreground">
-          <span className="bg-card px-4">or with email</span>
-        </div>
+      <div className="mb-6 flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/15" />
+        <span>or with email</span>
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/15" />
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

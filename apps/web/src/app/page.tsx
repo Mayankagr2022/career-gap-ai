@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { Navigation } from '@/components/landing/navigation';
 import { HeroSection } from '@/components/landing/hero-section';
+import { SkillsMarquee } from '@/components/landing/skills-marquee';
 
 // Lazy load below-the-fold components
 const FeaturesSection = dynamic(() => import('@/components/landing/features-section').then(mod => mod.FeaturesSection));
@@ -16,6 +17,7 @@ export default function LandingPage() {
     <div className="min-h-screen overflow-hidden">
       <Navigation />
       <HeroSection />
+      <SkillsMarquee />
       <FeaturesSection />
       <HowItWorksSection />
       <TestimonialsSection />

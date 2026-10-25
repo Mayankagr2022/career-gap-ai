@@ -44,32 +44,32 @@ function Dropzone({ onUpload, isPending }: { onUpload: (file: File) => void; isP
     <div
       {...getRootProps()}
       className={cn(
-        'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all duration-200',
+        'group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed px-5 py-10 text-center transition-all duration-200',
         isDragActive
-          ? 'border-brand-500/60 bg-brand-500/5'
-          : 'border-border hover:border-brand-500/30 hover:bg-foreground/[0.02]',
-        isPending && 'pointer-events-none opacity-60',
+          ? 'border-brand-400 bg-brand-500/10 shadow-glow'
+          : 'border-brand-400/30 bg-white/[0.02] hover:border-brand-400/60 hover:bg-brand-500/5',
+        isPending && 'pointer-events-none opacity-70',
       )}
     >
       <input {...getInputProps()} />
       {isPending ? (
         <>
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-brand-400" />
-          <p className="text-sm font-medium text-brand-300">Reading the file...</p>
+          <Loader2 className="mb-4 h-10 w-10 animate-spin text-brand-300" />
+          <p className="text-sm font-medium text-brand-200">Reading the file...</p>
         </>
       ) : (
         <>
           <div className={cn(
-            'mb-4 flex h-14 w-14 items-center justify-center rounded-2xl transition-transform',
-            isDragActive ? 'scale-110 bg-brand-500/20' : 'bg-muted',
+            'mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 transition-transform',
+            isDragActive ? 'scale-110 bg-gradient-to-br from-brand-500 to-violet-500' : 'bg-brand-500/15',
           )}>
-            <Upload className={cn('h-6 w-6', isDragActive ? 'text-brand-400' : 'text-muted-foreground')} />
+            <Upload className={cn('h-6 w-6', isDragActive ? 'text-white' : 'text-brand-300')} />
           </div>
           <p className="mb-1 text-base font-semibold">
             {isDragActive ? 'Drop the job description here' : 'Upload a job description'}
           </p>
           <p className="text-sm text-muted-foreground">
-            Drag & drop or <span className="text-brand-400">browse</span> • PDF, DOCX, TXT up to 5MB
+            Drag &amp; drop or <span className="text-brand-300">browse</span> • PDF, DOCX, TXT up to 5MB
           </p>
         </>
       )}
@@ -112,12 +112,12 @@ function Review({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
         <span className="flex min-w-0 items-center gap-2">
-          <FileText className="h-4 w-4 shrink-0 text-brand-400" />
+          <FileText className="h-4 w-4 shrink-0 text-brand-300" />
           <span className="truncate">{draft.filename}</span>
         </span>
-        <button type="button" onClick={onReset} disabled={isPending} className="shrink-0 text-xs text-brand-400 hover:underline">
+        <button type="button" onClick={onReset} disabled={isPending} className="min-h-[40px] shrink-0 text-xs text-brand-300 hover:underline">
           Choose a different file
         </button>
       </div>
