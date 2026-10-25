@@ -1,0 +1,22 @@
+{
+  "name": "careergap-infra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS CDK app for CareerGap AI (ECS Fargate, RDS PostgreSQL, ElastiCache Redis, S3)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth --strict",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.274.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "aws-cdk": "^2.1146.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2"
+  }
+}

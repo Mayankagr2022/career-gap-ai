@@ -1,0 +1,195 @@
+name: CI and Deploy
+
+# Pull requests and pushes to main run the checks. A push to main that passes them is also deployed to AWS
+# (ECS Fargate) after approval of the "production" environment. See infra/README.md for the one-time AWS setup.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; never cancel one that is already running. New pull request pushes replace older runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  check:
+    name: Type-check, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from "packageManager" in package.json
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the shared package and generate the Prisma client
+        run: |
+          pnpm --filter @career-gap-ai/shared build
+          pnpm --filter @career-gap-ai/api db:generate
+
+      - name: Type-check API and web
+        run: |
+          pnpm --filter @career-gap-ai/api exec tsc --noEmit -p tsconfig.json
+          pnpm --filter @career-gap-ai/web exec tsc --noEmit
+
+      - name: API unit tests
+        run: pnpm --filter @career-gap-ai/api test -- --ci
+
+      - name: Production build
+        run: pnpm build
+
+  images:
+    name: Build Docker images
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://app.example.com/api/v1
+            NEXT_PUBLIC_APP_URL=https://app.example.com
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  infra:
+    name: Validate infrastructure code
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Synthesizes the CloudFormation template with placeholder values; --strict fails on warnings
+      - name: Synthesize
+        run: >
+          npx cdk synth --strict --quiet
+          -c publicUrl=https://app.example.com
+          -c certificateArn=arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000
+
+  deploy:
+    name: Build images, migrate and deploy
+    needs: [check, infra]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Add required reviewers to this environment in the repository settings to gate production deploys.
+    # The AWS role trusts only jobs that run in this environment.
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL }}
+    permissions:
+      id-token: write # request the OIDC token for AWS
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      CLUSTER: careergap
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the repository is configured for deploys
+        run: |
+          missing=""
+          for name in AWS_REGION AWS_DEPLOY_ROLE_ARN PUBLIC_URL; do
+            eval "value=\${VAR_$name}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Set these repository variables (Settings > Secrets and variables > Actions > Variables):$missing"
+            exit 1
+          fi
+        env:
+          VAR_AWS_REGION: ${{ vars.AWS_REGION }}
+          VAR_AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          VAR_PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: github-${{ github.run_id }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/careergap/api:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      # NEXT_PUBLIC_* values are compiled into the browser bundle, so they are build arguments
+      - name: Build and push the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_URL }}/api/v1
+            NEXT_PUBLIC_APP_URL=${{ vars.PUBLIC_URL }}
+          tags: ${{ steps.ecr.outputs.registry }}/careergap/web:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      - name: Migrate the database and roll out the new version
+        run: bash .github/scripts/deploy-ecs.sh
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          API_DESIRED_COUNT: ${{ vars.API_DESIRED_COUNT }}
+          WEB_DESIRED_COUNT: ${{ vars.WEB_DESIRED_COUNT }}

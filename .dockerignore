@@ -1,0 +1,19 @@
+# Keep the build context small and keep secrets out of images
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/.tsbuildinfo
+.git
+.github
+.vscode
+.claude
+infra
+**/*.log
+
+# Environment files are never baked into an image; configuration comes from the task/container environment
+**/.env
+**/.env.*
+!**/.env.example
