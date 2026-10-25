@@ -7,8 +7,10 @@ import { ConfigService } from '@nestjs/config';
 export class LinkedInStrategy extends PassportStrategy(Strategy, 'linkedin') {
   constructor(private readonly config: ConfigService) {
     super({
-      clientID: config.get('oauth.linkedin.clientId'),
-      clientSecret: config.get('oauth.linkedin.clientSecret'),
+      // The strategy constructor throws on an empty client ID, which would stop the whole API from starting;
+      // with a placeholder the app boots and only this provider's login fails until it is configured.
+      clientID: config.get('oauth.linkedin.clientId') || 'not-configured',
+      clientSecret: config.get('oauth.linkedin.clientSecret') || 'not-configured',
       callbackURL: config.get('oauth.linkedin.callbackUrl'),
       scope: ['openid', 'profile', 'email'],
     });

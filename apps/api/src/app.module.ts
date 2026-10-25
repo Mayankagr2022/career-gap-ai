@@ -27,6 +27,7 @@ import { emailConfig } from './config/email.config';
 import { AuditModule } from './common/audit/audit.module';
 import { SkillsModule } from './modules/skills/skills.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -109,6 +110,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     CoachingModule,
     MarketModule,
     NotificationsModule,
+    HealthModule,
   ],
   providers: [
     // Without this guard the ThrottlerModule config above is never enforced

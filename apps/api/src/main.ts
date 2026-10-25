@@ -21,6 +21,13 @@ async function bootstrap() {
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
 
+  // Behind a load balancer the client address arrives in X-Forwarded-For. Without trusting it, every user
+  // appears to have the balancer's IP and shares one rate limit. One hop in production; override with TRUST_PROXY_HOPS.
+  const trustProxyHops = Number(configService.get('TRUST_PROXY_HOPS', process.env.NODE_ENV === 'production' ? 1 : 0));
+  if (trustProxyHops > 0) {
+    app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
+  }
+
   // Security
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
