@@ -91,8 +91,12 @@ export class ResumesService {
     return resume;
   }
 
+  /**
+   * List view: card fields plus a skills preview. The full parsed resume is only sent by findOne,
+   * so polling this list while a resume processes stays small.
+   */
   async findAll(userId: string) {
-    return this.prisma.resume.findMany({
+    const resumes = await this.prisma.resume.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -108,22 +112,57 @@ export class ResumesService {
         updatedAt: true,
       },
     });
+
+    return resumes.map(({ parsedData, ...resume }) => {
+      const skills: string[] = Array.isArray((parsedData as any)?.skills) ? (parsedData as any).skills : [];
+      return { ...resume, skills: skills.slice(0, 4), skillCount: skills.length };
+    });
   }
 
+  /** Detail view: parsed data and recent analyses, without the stored file location or raw text. */
   async findOne(id: string, userId: string) {
     const resume = await this.prisma.resume.findUnique({
       where: { id },
-      include: { analyses: { take: 5, orderBy: { createdAt: 'desc' } } },
+      select: {
+        id: true,
+        userId: true,
+        originalName: true,
+        fileSize: true,
+        mimeType: true,
+        status: true,
+        atsScore: true,
+        errorMessage: true,
+        parsedData: true,
+        createdAt: true,
+        updatedAt: true,
+        analyses: {
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, jobId: true, status: true, matchScore: true, atsScore: true, createdAt: true },
+        },
+      },
     });
 
     if (!resume) throw new NotFoundException('Resume not found');
     if (resume.userId !== userId) throw new ForbiddenException('Access denied');
 
+    const { userId: _owner, ...detail } = resume;
+    return detail;
+  }
+
+  /** Ownership check that also returns the storage key; avoids loading parsed data and analyses. */
+  private async findOwned(id: string, userId: string) {
+    const resume = await this.prisma.resume.findUnique({
+      where: { id },
+      select: { id: true, userId: true, fileKey: true },
+    });
+    if (!resume) throw new NotFoundException('Resume not found');
+    if (resume.userId !== userId) throw new ForbiddenException('Access denied');
     return resume;
   }
 
   async delete(id: string, userId: string) {
-    const resume = await this.findOne(id, userId);
+    const resume = await this.findOwned(id, userId);
 
     // Best-effort S3 delete: a storage hiccup must not make the resume undeletable
     try {
@@ -139,7 +178,7 @@ export class ResumesService {
   }
 
   async getDownloadUrl(id: string, userId: string) {
-    const resume = await this.findOne(id, userId);
+    const resume = await this.findOwned(id, userId);
     const url = await this.storage.getSignedUrl(resume.fileKey, 3600);
     return { url, expiresIn: 3600 };
   }

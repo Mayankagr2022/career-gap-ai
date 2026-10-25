@@ -6,7 +6,6 @@ import { asArray, asNumber, asString, asStringArray } from './ai-output.util';
 
 export interface GapAnalysisResult {
   matchScore: number;
-  atsScore: number;
   skillGaps: SkillGap[];
   strengths: string[];
   weaknesses: string[];
@@ -53,7 +52,6 @@ ${rawJobDescription.substring(0, 3000)}
 Return ONLY valid JSON:
 {
   "matchScore": number (0-100),
-  "atsScore": number (0-100, how well resume would pass ATS systems),
   "skillGaps": [
     {
       "skill": "skill name",
@@ -68,7 +66,7 @@ Return ONLY valid JSON:
   "recommendations": ["actionable recommendation strings"],
   "atsSuggestions": [
     {
-      "type": "KEYWORD_MISSING|FORMAT_ISSUE|LENGTH_ISSUE|SECTION_MISSING|QUANTIFICATION_MISSING",
+      "type": "FORMAT_ISSUE|LENGTH_ISSUE|SECTION_MISSING|QUANTIFICATION_MISSING",
       "message": "issue description",
       "severity": "HIGH|MEDIUM|LOW",
       "suggestion": "specific fix suggestion"
@@ -88,7 +86,6 @@ Return ONLY valid JSON:
 
     // Normalise: the model may omit or mistype fields; never let that crash the pipeline
     result.matchScore = Math.max(0, Math.min(100, Math.round(asNumber(result.matchScore))));
-    result.atsScore = Math.max(0, Math.min(100, Math.round(asNumber(result.atsScore))));
     result.skillGaps = asArray<any>(result.skillGaps)
       .filter((g) => g && typeof g.skill === 'string' && g.skill.trim())
       .map((g) => ({ ...g, skill: g.skill.trim(), currentLevel: asNumber(g.currentLevel), requiredLevel: asNumber(g.requiredLevel) }));
@@ -101,7 +98,7 @@ Return ONLY valid JSON:
     result.executiveSummary = asString(result.executiveSummary);
 
     this.logger.log(
-      `Analysis complete: match=${result.matchScore}%, ATS=${result.atsScore}%, fit=${result.fitAssessment}`,
+      `Analysis complete: match=${result.matchScore}%, fit=${result.fitAssessment}`,
     );
 
     return result;

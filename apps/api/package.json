@@ -17,6 +17,8 @@
     "db:migrate:check": "node scripts/check-migrations.js",
     "db:migrate:prod": "node scripts/check-migrations.js && prisma migrate deploy",
     "db:studio": "prisma studio",
+    "ats:backfill": "node dist/src/scripts/backfill-ats.js",
+    "jobs:normalize-skills": "node dist/src/scripts/normalize-job-skills.js",
     "clean": "rm -rf dist"
   },
   "dependencies": {

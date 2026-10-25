@@ -5,10 +5,12 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { JobSkillImportance, Prisma } from '@prisma/client';
+import { JobSkillImportance, NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import { JobParserAgent, ParsedJob } from '../ai/agents/job-parser.agent';
+import { NotificationsService } from '../notifications/notifications.service';
+import { singleSkills } from '../../common/scoring/ats-score';
 import { SkillsService, skillSlug } from '../skills/skills.service';
 import { DocumentTextService } from '../../common/documents/document-text.service';
 import { decodeFilename, detectMimeType } from '../../common/documents/document-mime';
@@ -61,6 +63,7 @@ export class JobsService {
     private readonly skillsService: SkillsService,
     private readonly documents: DocumentTextService,
     private readonly drafts: JobDraftService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateJobDto) {
@@ -174,14 +177,15 @@ export class JobsService {
   }
 
   private async persist(userId: string, fields: JobFields, parsed: ParsedJob) {
-    const catalog = await this.skillsService.resolveMany([
-      ...parsed.requiredSkills,
-      ...parsed.preferredSkills,
-    ]);
+    // The model sometimes returns whole phrases ("Cloud platforms (AWS, GCP)"); store one skill per entry so
+    // the catalog, skill gaps and market stats count real skills.
+    const requiredSkills = singleSkills(parsed.requiredSkills);
+    const preferredSkills = singleSkills(parsed.preferredSkills);
+    const catalog = await this.skillsService.resolveMany([...requiredSkills, ...preferredSkills]);
     const jobSkills = new Map<string, JobSkillImportance>();
     // Preferred first so a skill listed as both ends up REQUIRED
-    parsed.preferredSkills.forEach((n) => jobSkills.set(skillSlug(n), JobSkillImportance.PREFERRED));
-    parsed.requiredSkills.forEach((n) => jobSkills.set(skillSlug(n), JobSkillImportance.REQUIRED));
+    preferredSkills.forEach((n) => jobSkills.set(skillSlug(n), JobSkillImportance.PREFERRED));
+    requiredSkills.forEach((n) => jobSkills.set(skillSlug(n), JobSkillImportance.REQUIRED));
 
     const job = await this.prisma.job.create({
       data: {
@@ -206,6 +210,14 @@ export class JobsService {
         },
       },
       include: skillsInclude,
+    });
+
+    await this.notifications.notify({
+      userId,
+      title: 'Job Added',
+      message: `"${fields.title}" at ${fields.company} was added with ${job.skills.length} skills extracted.`,
+      type: NotificationType.SUCCESS,
+      link: '/dashboard/jobs',
     });
 
     // Generate and store embeddings async (don't await to speed up response)
@@ -285,7 +297,10 @@ export class JobsService {
   }
 
   async delete(id: string, userId: string) {
-    await this.findOne(id, userId);
+    // Ownership check only; no need to load skills and analyses
+    const job = await this.prisma.job.findUnique({ where: { id }, select: { userId: true, isActive: true } });
+    if (!job || !job.isActive) throw new NotFoundException('Job not found');
+    if (job.userId !== userId) throw new ForbiddenException('Access denied');
     await this.prisma.job.update({ where: { id }, data: { isActive: false } });
     return { message: 'Job deleted successfully' };
   }

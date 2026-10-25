@@ -60,7 +60,11 @@ export class RoadmapsService {
       include: {
         ...milestonesInclude,
         analysis: {
-          include: {
+          select: {
+            id: true,
+            status: true,
+            matchScore: true,
+            atsScore: true,
             job: { select: { title: true, company: true } },
             resume: { select: { originalName: true } },
           },
@@ -74,6 +78,16 @@ export class RoadmapsService {
     return toRoadmapDto(roadmap);
   }
 
+  /** Ownership check without loading milestones, tasks or the analysis. */
+  private async assertOwned(id: string, userId: string) {
+    const roadmap = await this.prisma.roadmap.findUnique({
+      where: { id },
+      select: { userId: true, isActive: true },
+    });
+    if (!roadmap || !roadmap.isActive) throw new NotFoundException('Roadmap not found');
+    if (roadmap.userId !== userId) throw new ForbiddenException('Access denied');
+  }
+
   async updateMilestoneTask(
     roadmapId: string,
     userId: string,
@@ -81,35 +95,36 @@ export class RoadmapsService {
     taskId: string,
     completed: boolean,
   ) {
-    await this.findOne(roadmapId, userId);
+    await this.assertOwned(roadmapId, userId);
 
     const task = await this.prisma.roadmapTask.findFirst({
       where: { id: taskId, milestoneId, milestone: { roadmapId } },
     });
     if (!task) throw new NotFoundException('Task not found');
 
-    await this.prisma.$transaction(async (tx) => {
+    const { completionPct, milestoneCompleted } = await this.prisma.$transaction(async (tx) => {
       await tx.roadmapTask.update({
         where: { id: taskId },
         data: { isCompleted: completed, completedAt: completed ? new Date() : null },
       });
 
-      const [total, done] = await Promise.all([
+      const [total, done, openInMilestone] = await Promise.all([
         tx.roadmapTask.count({ where: { milestone: { roadmapId } } }),
         tx.roadmapTask.count({ where: { milestone: { roadmapId }, isCompleted: true } }),
+        tx.roadmapTask.count({ where: { milestoneId, isCompleted: false } }),
       ]);
 
-      await tx.roadmap.update({
-        where: { id: roadmapId },
-        data: { completionPct: total > 0 ? Math.round((done / total) * 100) : 0 },
-      });
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      await tx.roadmap.update({ where: { id: roadmapId }, data: { completionPct: pct } });
+      return { completionPct: pct, milestoneCompleted: openInMilestone === 0 };
     });
 
-    return this.findOne(roadmapId, userId);
+    // Just what changed; the client updates its cached roadmap instead of re-downloading the whole tree
+    return { roadmapId, milestoneId, taskId, completed, milestoneCompleted, completionPct };
   }
 
   async delete(id: string, userId: string) {
-    await this.findOne(id, userId);
+    await this.assertOwned(id, userId);
     await this.prisma.roadmap.update({ where: { id }, data: { isActive: false } });
     return { message: 'Roadmap deleted' };
   }

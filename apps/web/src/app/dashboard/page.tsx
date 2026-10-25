@@ -4,8 +4,7 @@ import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { useResumes } from '@/hooks/use-resumes';
 
 import { StatCards } from './_components/stat-cards';
 import { QuickActions } from './_components/quick-actions';
@@ -24,10 +23,7 @@ const TrendingSkills = dynamic(() => import('./_components/trending-skills').the
 export default function DashboardPage() {
   const { user } = useAuthStore();
 
-  const { data: resumes } = useQuery({
-    queryKey: ['resumes'],
-    queryFn: () => api.get<any[]>('/resumes'),
-  });
+  const { data: resumes } = useResumes();
 
   const processingResumes = resumes?.filter((r) => r.status === 'PROCESSING' || r.status === 'PENDING') || [];
 

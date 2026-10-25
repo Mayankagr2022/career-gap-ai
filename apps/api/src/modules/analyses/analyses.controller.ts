@@ -33,6 +33,12 @@ export class AnalysesController {
     return this.analysesService.getLatestForDashboard(userId);
   }
 
+  @Get(':id/status')
+  @ApiOperation({ summary: 'Lightweight status for polling a running analysis' })
+  getStatus(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') userId: string) {
+    return this.analysesService.getStatus(id, userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get analysis with full results' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') userId: string) {

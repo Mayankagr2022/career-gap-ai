@@ -57,12 +57,28 @@ export class MarketService {
     });
   }
 
+  /**
+   * Rising skills first. "Rising" needs a week of history to measure, so until enough skills qualify the list
+   * is topped up with the most in-demand skills (their trend field says what they are) instead of coming back empty.
+   */
   async getTrendingSkills(limit: number = 10) {
-    return this.query({
+    const rising = await this.query({
       where: { trend: SkillTrend.RISING },
       orderBy: { demandScore: 'desc' },
       take: limit,
     });
+    if (rising.length >= limit) return rising;
+
+    const topUp = await this.query({
+      where: { trend: { not: SkillTrend.RISING } },
+      orderBy: [{ demandScore: 'desc' }, { jobCount: 'desc' }],
+      take: limit - rising.length,
+    });
+    return [...rising, ...topUp];
+  }
+
+  getOverview() {
+    return this.marketStats.getOverview();
   }
 
   /** Market stats for the skills found on a resume (via the resume_skills join). */

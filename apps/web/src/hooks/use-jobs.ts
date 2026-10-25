@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { userStatsKey } from './use-user-stats';
+import { notificationKeys } from './use-notifications';
 
 interface CreateJobData {
   title: string;
@@ -11,17 +13,33 @@ interface CreateJobData {
   salary?: { min: number; max: number; currency?: string };
 }
 
+export const jobKeys = {
+  all: ['jobs'] as const,
+  list: () => [...jobKeys.all, 'list'] as const,
+  detail: (id: string) => [...jobKeys.all, 'detail', id] as const,
+};
+
+/** Thin wrapper over the jobs endpoints. */
+export const jobsApi = {
+  list: () => api.get<any[]>('/jobs'),
+  detail: (id: string) => api.get<any>(`/jobs/${id}`),
+  create: (data: CreateJobData) => api.post<any>('/jobs', data),
+  confirmUpload: (draftId: string, body: { title: string; company: string }) =>
+    api.post<any>(`/jobs/upload/${draftId}/confirm`, body),
+  remove: (id: string) => api.delete(`/jobs/${id}`),
+};
+
 export function useJobs() {
   return useQuery({
-    queryKey: ['jobs'],
-    queryFn: () => api.get<any[]>('/jobs'),
+    queryKey: jobKeys.list(),
+    queryFn: jobsApi.list,
   });
 }
 
 export function useJob(id: string) {
   return useQuery({
-    queryKey: ['jobs', id],
-    queryFn: () => api.get<any>(`/jobs/${id}`),
+    queryKey: jobKeys.detail(id),
+    queryFn: () => jobsApi.detail(id),
     enabled: !!id,
   });
 }
@@ -30,9 +48,11 @@ export function useCreateJob() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateJobData) => api.post<any>('/jobs', data),
+    mutationFn: jobsApi.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      queryClient.invalidateQueries({ queryKey: jobKeys.list() });
+      queryClient.invalidateQueries({ queryKey: userStatsKey });
+      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
       toast.success('Job added and AI is parsing requirements...');
     },
     onError: (error: any) => {
@@ -71,9 +91,11 @@ export function useConfirmJobUpload() {
 
   return useMutation({
     mutationFn: ({ draftId, title, company }: { draftId: string; title: string; company: string }) =>
-      api.post<any>(`/jobs/upload/${draftId}/confirm`, { title, company }),
+      jobsApi.confirmUpload(draftId, { title, company }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      queryClient.invalidateQueries({ queryKey: jobKeys.list() });
+      queryClient.invalidateQueries({ queryKey: userStatsKey });
+      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
       toast.success('Job added');
     },
     onError: (error: any) => {
@@ -86,12 +108,14 @@ export function useDeleteJob() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => api.delete(`/jobs/${id}`),
+    mutationFn: jobsApi.remove,
     onError: (error: any) => {
       toast.error(getErrorMessage(error, 'Failed to delete job'));
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: jobKeys.list() });
+      queryClient.invalidateQueries({ queryKey: userStatsKey });
+      queryClient.removeQueries({ queryKey: jobKeys.detail(id) });
       toast.success('Job removed');
     },
   });

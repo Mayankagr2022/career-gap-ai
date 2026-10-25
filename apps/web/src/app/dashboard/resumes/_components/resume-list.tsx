@@ -64,7 +64,7 @@ export function ResumeList({
               <ResumeStatusBadge status={resume.status} />
               {resume.atsScore !== null && resume.atsScore !== undefined && (
                 <span className="text-xs text-muted-foreground">
-                  ATS: <span className="font-medium text-foreground">{Math.round(resume.atsScore)}%</span>
+                  <span title="Format and completeness of the resume. Each analysis also scores ATS against its job.">ATS readiness:</span> <span className="font-medium text-foreground">{Math.round(resume.atsScore)}%</span>
                 </span>
               )}
             </div>
@@ -76,13 +76,13 @@ export function ResumeList({
             )}
 
             {/* Skills preview */}
-            {resume.parsedData?.skills && (
+            {resume.skills?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1">
-                {resume.parsedData.skills.slice(0, 4).map((skill: string) => (
+                {resume.skills.map((skill: string) => (
                   <span key={skill} className="skill-tag">{skill}</span>
                 ))}
-                {resume.parsedData.skills.length > 4 && (
-                  <span className="skill-tag">+{resume.parsedData.skills.length - 4}</span>
+                {resume.skillCount > resume.skills.length && (
+                  <span className="skill-tag">+{resume.skillCount - resume.skills.length}</span>
                 )}
               </div>
             )}

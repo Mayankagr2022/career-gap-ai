@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { FileText, Briefcase, BarChart3, Lightbulb, ArrowRight } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { useUserStats } from '@/hooks/use-user-stats';
 
 function StatCard({
   icon: Icon, label, value, trend, href, gradient
@@ -35,10 +34,7 @@ function StatCard({
 }
 
 export function StatCards() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['user-stats'],
-    queryFn: () => api.get<any>('/users/stats'),
-  });
+  const { data: stats, isLoading: statsLoading } = useUserStats();
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

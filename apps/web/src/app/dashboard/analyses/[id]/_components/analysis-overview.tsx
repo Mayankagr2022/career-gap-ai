@@ -7,7 +7,15 @@ export function AnalysisOverview({ analysis }: { analysis: any }) {
       <h2 className="mb-6 font-display text-lg font-semibold">Analysis Overview</h2>
       <div className="flex flex-col items-center gap-8 sm:flex-row sm:justify-around">
         <ScoreRing score={analysis.matchScore} label="Match Score" />
-        <ScoreRing score={analysis.atsScore} label="ATS Score" />
+        <div className="flex flex-col items-center gap-1" title="How well this resume would pass an applicant tracking system for this job: 40% resume format, 60% job keywords">
+          <ScoreRing score={analysis.atsScore} label="ATS Score" />
+          {analysis.rawAnalysis?.atsBreakdown && (
+            <p className="text-xs text-muted-foreground">
+              Format {analysis.rawAnalysis.atsBreakdown.structure} · Keywords{' '}
+              {analysis.rawAnalysis.atsBreakdown.keyword ?? 'n/a'}
+            </p>
+          )}
+        </div>
 
         <div className="flex-1 space-y-3 max-w-sm">
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">

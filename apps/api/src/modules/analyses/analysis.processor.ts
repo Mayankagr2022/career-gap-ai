@@ -19,6 +19,8 @@ import {
 } from '@prisma/client';
 import { SkillsService, skillSlug } from '../skills/skills.service';
 import { publicErrorMessage } from '../../common/utils/public-error';
+import { buildKeywordSuggestions, computeAnalysisAts } from '../../common/scoring/ats-score';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** Coerce AI output to a valid enum value, falling back instead of failing the whole analysis. */
 const asEnum = <T extends string>(values: Record<string, T>, value: unknown, fallback: T): T =>
@@ -34,6 +36,7 @@ export class AnalysisProcessor {
     private readonly recommendationAgent: RecommendationAgent,
     private readonly roadmapAgent: RoadmapAgent,
     private readonly skillsService: SkillsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Process('process-analysis')
@@ -96,6 +99,14 @@ export class AnalysisProcessor {
         job_data.description,
       );
 
+      // ATS is computed from the resume and the job's skills, not guessed by the model. Keyword advice is
+      // derived from the same calculation so the suggestions always agree with the score.
+      const ats = computeAnalysisAts(parsedResume, analysis.resume.rawText, requiredSkills, preferredSkills);
+      const atsSuggestions: Array<{ type: string; severity: string; message: string; suggestion: string }> = [
+        ...(gapResult.atsSuggestions ?? []).filter((s) => String(s.type) !== 'KEYWORD_MISSING'),
+        ...buildKeywordSuggestions(ats),
+      ];
+
       // 4. Generate recommendations
       const recommendations = await this.recommendationAgent.generate(
         parsedResume,
@@ -124,14 +135,14 @@ export class AnalysisProcessor {
           data: {
             status: AnalysisStatus.COMPLETED,
             matchScore: gapResult.matchScore,
-            atsScore: gapResult.atsScore,
+            atsScore: ats.score,
             fitAssessment: asEnum(FitAssessment, gapResult.fitAssessment, FitAssessment.FAIR),
             executiveSummary: gapResult.executiveSummary,
             strengths: gapResult.strengths ?? [],
             weaknesses: gapResult.weaknesses ?? [],
             recommendations: gapResult.recommendations ?? [],
             errorMessage: null,
-            rawAnalysis: { ...gapResult, executiveSummary: gapResult.executiveSummary } as any,
+            rawAnalysis: { ...gapResult, atsSuggestions, atsBreakdown: ats } as any,
             processingTime,
           },
         });
@@ -153,7 +164,7 @@ export class AnalysisProcessor {
         });
 
         await tx.analysisAtsSuggestion.createMany({
-          data: (gapResult.atsSuggestions ?? []).map((s) => ({
+          data: atsSuggestions.map((s) => ({
             analysisId,
             type: asEnum(AtsIssueType, s.type, AtsIssueType.FORMAT_ISSUE),
             severity: asEnum(IssueSeverity, s.severity, IssueSeverity.MEDIUM),
@@ -206,17 +217,15 @@ export class AnalysisProcessor {
             },
           },
         });
+      });
 
-        // Create notification
-        await tx.notification.create({
-          data: {
-            userId: analysis.userId,
-            title: 'Analysis Completed',
-            message: `Your resume analysis for ${job_data.title || 'the job'} is ready!`,
-            type: NotificationType.SUCCESS,
-            link: `/dashboard/analyses/${analysisId}`,
-          },
-        });
+      // Outside the transaction: a notification problem must not undo a finished analysis
+      await this.notifications.notify({
+        userId: analysis.userId,
+        title: 'Analysis Completed',
+        message: `Your resume analysis for ${job_data.title || 'the job'} is ready! Match ${Math.round(gapResult.matchScore)}%, ATS ${ats.score}%.`,
+        type: NotificationType.SUCCESS,
+        link: `/dashboard/analyses/${analysisId}`,
       });
 
       this.logger.log(`Analysis ${analysisId} completed in ${processingTime}ms`);
@@ -230,26 +239,19 @@ export class AnalysisProcessor {
         throw error;
       }
 
-      // Create failure notification
-      const analysis = await this.prisma.analysis.findUnique({
+      // Mark it failed first so the user never sees it stuck "processing", then tell them
+      const failed = await this.prisma.analysis.update({
         where: { id: analysisId },
+        data: { status: AnalysisStatus.FAILED, errorMessage: publicErrorMessage(error) },
         select: { userId: true },
       });
 
-      if (analysis) {
-        await this.prisma.notification.create({
-          data: {
-            userId: analysis.userId,
-            title: 'Analysis Failed',
-            message: 'There was an error processing your resume analysis. Please try again.',
-            type: NotificationType.ERROR,
-          },
-        });
-      }
-
-      await this.prisma.analysis.update({
-        where: { id: analysisId },
-        data: { status: AnalysisStatus.FAILED, errorMessage: publicErrorMessage(error) },
+      await this.notifications.notify({
+        userId: failed.userId,
+        title: 'Analysis Failed',
+        message: 'There was an error processing your resume analysis. Please try again.',
+        type: NotificationType.ERROR,
+        link: `/dashboard/analyses/${analysisId}`,
       });
 
       throw error;

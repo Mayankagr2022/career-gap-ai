@@ -76,17 +76,36 @@ export class AnalysesService {
     return analysis;
   }
 
+  /** List view: summary fields only. The full result (gaps, raw AI output, roadmap) comes from findOne. */
   async findAll(userId: string) {
-    const analyses = await this.prisma.analysis.findMany({
+    return this.prisma.analysis.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      include: {
-        ...gapsInclude,
+      select: {
+        id: true,
+        status: true,
+        matchScore: true,
+        atsScore: true,
+        fitAssessment: true,
+        errorMessage: true,
+        createdAt: true,
+        updatedAt: true,
         resume: { select: { id: true, originalName: true, status: true } },
         job: { select: { id: true, title: true, company: true } },
       },
     });
-    return analyses.map(withGapArrays);
+  }
+
+  /** Cheap polling target: one indexed row, no joins. */
+  async getStatus(id: string, userId: string) {
+    const analysis = await this.prisma.analysis.findUnique({
+      where: { id },
+      select: { id: true, userId: true, status: true, errorMessage: true, updatedAt: true },
+    });
+    if (!analysis) throw new NotFoundException('Analysis not found');
+    if (analysis.userId !== userId) throw new ForbiddenException('Access denied');
+    const { userId: _owner, ...status } = analysis;
+    return status;
   }
 
   async findOne(id: string, userId: string) {
@@ -121,7 +140,7 @@ export class AnalysesService {
   }
 
   async delete(id: string, userId: string) {
-    const analysis = await this.findOne(id, userId);
+    await this.getStatus(id, userId); // ownership / existence check
     await this.prisma.analysis.delete({ where: { id } });
     return { message: 'Analysis deleted' };
   }

@@ -2,15 +2,11 @@
 
 import Link from 'next/link';
 import { Target, Plus, Zap } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { useUserStats } from '@/hooks/use-user-stats';
 import { getScoreColor, getScoreLabel, formatRelativeTime } from '@/lib/utils';
 
 export function LatestAnalysis() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['user-stats'],
-    queryFn: () => api.get<any>('/users/stats'),
-  });
+  const { data: stats, isLoading: statsLoading } = useUserStats();
 
   return (
     <div className="glass-card p-6 lg:col-span-2">

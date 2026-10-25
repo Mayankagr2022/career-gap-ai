@@ -1,19 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { useMarketTrends } from '@/hooks/use-market';
 
 export function TrendingSkills() {
-  const { data: trending, isLoading: trendingLoading } = useQuery({
-    queryKey: ['trending-skills'],
-    queryFn: () => api.get<any[]>('/market/trending?limit=6'),
-  });
+  const { data: trending, isLoading: trendingLoading } = useMarketTrends(6);
+  const hasRising = (trending ?? []).some((s: any) => s.trend === 'RISING');
 
   return (
     <div className="glass-card p-6 min-w-0 overflow-hidden">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold">Trending Skills</h2>
+        <h2 className="font-display text-lg font-semibold">{hasRising ? 'Trending Skills' : 'Top Skills in Demand'}</h2>
         <Link href="/dashboard/market" className="text-xs text-brand-400 hover:text-brand-300">
           View all →
         </Link>
@@ -35,7 +32,7 @@ export function TrendingSkills() {
             </div>
           ))}
         </div>
-      ) : trending ? (
+      ) : trending && trending.length > 0 ? (
         <div className="space-y-2">
           {trending.slice(0, 6).map((skill: any, i: number) => (
             <div key={skill.skill} className="flex items-center gap-3">
@@ -43,7 +40,13 @@ export function TrendingSkills() {
               <div className="flex-1 min-w-0">
                 <div className="mb-1 flex items-center justify-between text-xs">
                   <span className="font-medium truncate pr-2">{skill.skill}</span>
-                  <span className="text-emerald-400 shrink-0 whitespace-nowrap">↑ {skill.trend}</span>
+                  {skill.trend === 'RISING' ? (
+                    <span className="text-emerald-400 shrink-0 whitespace-nowrap">↑ Rising</span>
+                  ) : skill.trend === 'DECLINING' ? (
+                    <span className="text-red-400 shrink-0 whitespace-nowrap">↓ Declining</span>
+                  ) : (
+                    <span className="text-muted-foreground shrink-0 whitespace-nowrap">{skill.jobCount} {skill.jobCount === 1 ? 'job' : 'jobs'}</span>
+                  )}
                 </div>
                 <div className="progress-bar h-1.5">
                   <div className="progress-fill" style={{ width: `${skill.demandScore * 10}%` }} />
@@ -53,7 +56,11 @@ export function TrendingSkills() {
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Add at least 5 jobs to see which skills are in demand.
+        </p>
+      )}
     </div>
   );
 }

@@ -6,9 +6,11 @@ import { StorageService } from '../../common/storage/storage.service';
 import { ResumeParserService } from './resume-parser.service';
 import { ResumeParserAgent } from '../ai/agents/resume-parser.agent';
 import { EmbeddingService } from '../ai/embedding.service';
-import { ResumeStatus } from '@prisma/client';
+import { NotificationType, ResumeStatus } from '@prisma/client';
 import { SkillsService } from '../skills/skills.service';
 import { publicErrorMessage } from '../../common/utils/public-error';
+import { scoreResumeStructure } from '../../common/scoring/ats-score';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Processor('resume-processing')
 export class ResumeProcessor {
@@ -21,6 +23,7 @@ export class ResumeProcessor {
     private readonly resumeParserAgent: ResumeParserAgent,
     private readonly embeddingService: EmbeddingService,
     private readonly skillsService: SkillsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Process('process-resume')
@@ -56,8 +59,8 @@ export class ResumeProcessor {
       // 6. Generate embeddings for RAG
       await this.embeddingService.storeResumeEmbedding(resumeId, rawText);
 
-      // 7. Calculate ATS score (basic heuristic - full analysis happens in analyses module)
-      const atsScore = this.calculateBasicAtsScore(parsedData);
+      // 7. ATS readiness: format and completeness of the resume (job-specific ATS is scored per analysis)
+      const atsScore = scoreResumeStructure(parsedData, rawText).score;
 
       // 8. Update resume with parsed data and link its skills to the catalog
       const catalog = await this.skillsService.resolveMany(parsedData.skills ?? []);
@@ -81,6 +84,14 @@ export class ResumeProcessor {
 
       const processingTime = Date.now() - startTime;
       this.logger.log(`Resume ${resumeId} processed in ${processingTime}ms`);
+
+      await this.notifications.notify({
+        userId: resume.userId,
+        title: 'Resume Ready',
+        message: `"${resume.originalName}" was analyzed. ATS readiness: ${atsScore}%.`,
+        type: NotificationType.SUCCESS,
+        link: '/dashboard/resumes',
+      });
     } catch (error: any) {
       this.logger.error(`Failed to process resume ${resumeId}: ${error.message || String(error)}`, error.stack);
 
@@ -95,40 +106,15 @@ export class ResumeProcessor {
         data: { status: ResumeStatus.FAILED, errorMessage: publicErrorMessage(error) },
       });
 
+      await this.notifications.notify({
+        userId: job.data.userId,
+        title: 'Resume Failed',
+        message: 'We could not process your resume. Open Resumes to see the reason, then try again.',
+        type: NotificationType.ERROR,
+        link: '/dashboard/resumes',
+      });
+
       throw error;
     }
-  }
-
-  private calculateBasicAtsScore(parsed: any): number {
-    let score = 0;
-
-    // Has contact info
-    if (parsed.email) score += 10;
-    if (parsed.phone) score += 5;
-    if (parsed.location) score += 5;
-
-    // Has summary
-    if (parsed.summary) score += 10;
-
-    // Skills
-    const skillCount = parsed.skills?.length || 0;
-    score += Math.min(20, skillCount * 2);
-
-    // Experience with achievements
-    const expWithAchievements = (parsed.experience || []).filter(
-      (e: any) => e.achievements?.length > 0,
-    ).length;
-    score += Math.min(20, expWithAchievements * 5);
-
-    // Education
-    if (parsed.education?.length > 0) score += 10;
-
-    // Certifications
-    if (parsed.certifications?.length > 0) score += 10;
-
-    // Total experience
-    if (parsed.totalYearsExperience > 0) score += 10;
-
-    return Math.min(100, score);
   }
 }

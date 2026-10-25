@@ -1,18 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { useRecentAnalyses } from '@/hooks/use-analyses';
 import { Loader2, AlertCircle, Clock } from 'lucide-react';
 import { cn, getScoreColor, formatRelativeTime } from '@/lib/utils';
 
 export function RecentAnalyses() {
-  const { data: analyses, isLoading: analysesLoading } = useQuery({
-    queryKey: ['analyses'],
-    queryFn: () => api.get<any[]>('/analyses'),
-  });
-
-  const recentAnalyses = analyses?.slice(0, 3) || [];
+  const { data: recentAnalyses = [], isLoading: analysesLoading } = useRecentAnalyses(3);
 
   return (
     <div className="glass-card p-6 min-w-0 overflow-hidden">

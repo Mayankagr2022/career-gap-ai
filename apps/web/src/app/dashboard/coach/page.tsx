@@ -3,8 +3,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Brain } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/api-client';
+import {
+  useCoachingSessions,
+  useCoachingSession,
+  useStartCoachingSession,
+  useContinueCoachingSession,
+  useDeleteCoachingSession,
+} from '@/hooks/use-coaching';
 import { createPortal } from 'react-dom';
 import { ChatSidebar } from './_components/chat-sidebar';
 import { ChatMessageList, Message } from './_components/chat-message-list';
@@ -19,20 +25,14 @@ export default function CoachPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const { data: sessions } = useQuery({
-    queryKey: ['coaching-sessions'],
-    queryFn: () => api.get<any[]>('/coaching/sessions'),
-  });
+  const { data: sessions } = useCoachingSessions();
 
-  const { mutate: startSession, isPending: isStarting } = useMutation({
-    mutationFn: (message: string) =>
-      api.post<{ sessionId: string; response: string }>('/coaching/sessions', { message }),
+  const { mutate: startSession, isPending: isStarting } = useStartCoachingSession({
     onMutate: (message) => {
       setChatError(null);
       setMessages([{ role: 'user', content: message, timestamp: new Date().toISOString() }]);
@@ -43,17 +43,14 @@ export default function CoachPage() {
         ...prev,
         { role: 'assistant', content: data.response, timestamp: new Date().toISOString() },
       ]);
-      queryClient.invalidateQueries({ queryKey: ['coaching-sessions'] });
     },
-    onError: (err: any) => {
-      setChatError(err.message || 'Failed to start session');
+    onError: (err) => {
+      setChatError(getErrorMessage(err, 'Failed to start session'));
       setMessages([]);
-    }
+    },
   });
 
-  const { mutate: continueSession, isPending: isContinuing } = useMutation({
-    mutationFn: (message: string) =>
-      api.post<{ response: string }>(`/coaching/sessions/${activeSession}/messages`, { message }),
+  const { mutate: continueSession, isPending: isContinuing } = useContinueCoachingSession(activeSession, {
     onMutate: (message) => {
       setChatError(null);
       setMessages((prev) => [
@@ -67,29 +64,26 @@ export default function CoachPage() {
         { role: 'assistant', content: data.response, timestamp: new Date().toISOString() },
       ]);
     },
-    onError: (err: any) => {
-      setChatError(err.message || 'Failed to send message');
-      setMessages((prev) => prev.filter(m => m.role !== 'user' || m.content !== err.variables));
-    }
-  });
-
-  const { mutate: deleteSession } = useMutation({
-    mutationFn: (sessionId: string) => api.delete(`/coaching/sessions/${sessionId}`),
-    onSuccess: (_, deletedId) => {
-      queryClient.invalidateQueries({ queryKey: ['coaching-sessions'] });
-      if (activeSession === deletedId) {
-        setActiveSession(null);
-        setMessages([]);
-      }
-      setSessionToDelete(null);
+    onError: (err, message) => {
+      setChatError(getErrorMessage(err, 'Failed to send message'));
+      // Take back the optimistic user bubble that never got an answer
+      setMessages((prev) => {
+        const index = prev.map((m) => m.role + m.content).lastIndexOf('user' + message);
+        return index < 0 ? prev : prev.filter((_, i) => i !== index);
+      });
     },
   });
 
-  const { data: loadedSession } = useQuery({
-    queryKey: ['coaching-session', activeSession],
-    queryFn: () => api.get<any>(`/coaching/sessions/${activeSession}`),
-    enabled: !!activeSession && messages.length === 0,
+  const { mutate: deleteSession } = useDeleteCoachingSession((deletedId) => {
+    if (activeSession === deletedId) {
+      setActiveSession(null);
+      setMessages([]);
+    }
+    setSessionToDelete(null);
   });
+
+  // Only an old chat opened from the sidebar needs its transcript fetched
+  const { data: loadedSession } = useCoachingSession(activeSession, messages.length === 0);
 
   useEffect(() => {
     if (loadedSession?.messages) {

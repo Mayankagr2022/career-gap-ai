@@ -36,8 +36,9 @@ function setup() {
     get: jest.fn(),
     remove: jest.fn().mockResolvedValue(undefined),
   };
-  const service = new JobsService(prisma as any, {} as any, parser as any, skills as any, documents as any, drafts as any);
-  return { service, prisma, parser, skills, documents, drafts };
+  const notifications = { notify: jest.fn().mockResolvedValue(undefined) };
+  const service = new JobsService(prisma as any, {} as any, parser as any, skills as any, documents as any, drafts as any, notifications as any);
+  return { service, prisma, parser, skills, documents, drafts, notifications };
 }
 
 describe('JobsService file upload', () => {
@@ -116,6 +117,21 @@ describe('JobsService file upload', () => {
         sourceFilename: 'backend.txt',
       });
       expect(drafts.remove).toHaveBeenCalledWith(USER, 'draft-1');
+    });
+
+    it('notifies the user that the job was added, and not when the parse fails', async () => {
+      const ok = setup();
+      ok.drafts.get.mockResolvedValue({ text: LONG_TEXT, filename: 'backend.txt' });
+      await ok.service.confirmUpload(USER, 'draft-1', dto);
+      expect(ok.notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: USER, title: 'Job Added', type: 'SUCCESS', link: '/dashboard/jobs' }),
+      );
+
+      const failed = setup();
+      failed.drafts.get.mockResolvedValue({ text: LONG_TEXT, filename: 'backend.txt' });
+      failed.parser.parse.mockRejectedValue(new Error('AI unavailable'));
+      await expect(failed.service.confirmUpload(USER, 'draft-1', dto)).rejects.toThrow();
+      expect(failed.notifications.notify).not.toHaveBeenCalled();
     });
 
     it('reports an expired or unknown draft', async () => {

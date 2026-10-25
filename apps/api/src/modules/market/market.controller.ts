@@ -31,6 +31,13 @@ export class MarketController {
   }
 
   @Public()
+  @Get('overview')
+  @ApiOperation({ summary: 'How much data the market stats are based on (job count, trend history)' })
+  getOverview() {
+    return this.service.getOverview();
+  }
+
+  @Public()
   @Get('trending')
   @ApiOperation({ summary: 'Get trending skills' })
   getTrending(@Query('limit') limit?: string) {

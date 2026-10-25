@@ -15,6 +15,19 @@ const TOP_COMPANIES = 5;
 
 const SOURCE = 'user-data';
 
+export interface MarketOverview {
+  /** Active jobs the stats are computed from. */
+  activeJobs: number;
+  /** Stats are only published from this many jobs, so one user's entry is never exposed. */
+  minJobs: number;
+  /** Whether enough jobs exist for any stats to be published. */
+  ready: boolean;
+  /** Whether a snapshot at least a week old exists, which is what "rising"/"declining" is measured against. */
+  trendHistory: boolean;
+  skillCount: number;
+  lastUpdated: Date | null;
+}
+
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 interface SkillAgg {
@@ -48,6 +61,25 @@ export class MarketStatsService {
         this.inFlight = null;
       });
     return this.inFlight;
+  }
+
+  /** What the market screens need to explain themselves when there is little or no data yet. */
+  async getOverview(): Promise<MarketOverview> {
+    await this.ensureFresh();
+    const [activeJobs, skillCount, oldSnapshots, latest] = await Promise.all([
+      this.prisma.job.count({ where: { isActive: true } }),
+      this.prisma.skillMarketStat.count(),
+      this.prisma.skillMarketSnapshot.count({ where: { capturedAt: { lte: new Date(Date.now() - TREND_WINDOW_MS) } } }),
+      this.prisma.skillMarketStat.aggregate({ _max: { lastUpdated: true } }),
+    ]);
+    return {
+      activeJobs,
+      minJobs: MIN_JOBS,
+      ready: activeJobs >= MIN_JOBS,
+      trendHistory: oldSnapshots > 0,
+      skillCount,
+      lastUpdated: latest._max.lastUpdated,
+    };
   }
 
   private async refresh(): Promise<void> {
