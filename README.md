@@ -1,6 +1,6 @@
 # CareerGap AI
 
-AI-powered career gap analysis and roadmap platform. Upload a resume, pair it with a target job description, and CareerGap AI uses Google Gemini to score the match, pinpoint skill gaps, suggest courses/certifications/projects, and generate a milestone-based learning roadmap. An AI career coach and a skill-market explorer round out the product.
+AI-powered career gap analysis and roadmap platform. Upload a resume, pair it with a target job description, and CareerGap AI uses NVIDIA NIM models (with automatic Google Gemini fallback) to score the match, pinpoint skill gaps, suggest courses/certifications/projects, and generate a milestone-based learning roadmap. An AI career coach and a skill-market explorer round out the product.
 
 ## Table of Contents
 
@@ -57,7 +57,7 @@ AI-powered career gap analysis and roadmap platform. Upload a resume, pair it wi
                                           └───────────────────┘   └──────┬────────────┘
                                                                          │ workers
                                         ┌────────────────┐        ┌──────▼────────────┐
-                                        │ AWS S3 / MinIO │◀───────│ Processors + AI   │──▶ Google Gemini
+                                        │ AWS S3 / MinIO │◀───────│ Processors + AI   │──▶ NVIDIA NIM → Gemini
                                         │ (resume files) │        │ agents            │
                                         └────────────────┘        └───────────────────┘
 ```
@@ -77,7 +77,7 @@ career-gap-ai/
 │   │   ├── src/
 │   │   │   ├── main.ts           # bootstrap: helmet, CORS, validation, Swagger
 │   │   │   ├── app.module.ts     # config, throttler, Bull, mailer, feature modules
-│   │   │   ├── config/           # registerAs() configs (app, db, jwt, redis, openai, aws, oauth, email)
+│   │   │   ├── config/           # registerAs() configs (app, db, jwt, redis, ai, aws, oauth, email)
 │   │   │   ├── common/           # decorators, guards, filters, interceptors, prisma, storage (S3), documents (PDF/DOCX/TXT text extraction)
 │   │   │   └── modules/
 │   │   │       ├── auth/ users/ resumes/ jobs/ analyses/
@@ -107,7 +107,7 @@ career-gap-ai/
 | Backend | NestJS 10, Passport (local, JWT, JWT-refresh, Google, LinkedIn), class-validator, Swagger, Throttler, Helmet |
 | Database | PostgreSQL 13+ with the `pgvector` extension, Prisma 5 |
 | Queue | Redis + Bull (`@nestjs/bull`) |
-| AI | Google Gemini via `@google/genai` (chat/JSON generation and `gemini-embedding-001` embeddings) |
+| AI | **NVIDIA NIM** (primary): chat/JSON generation via its OpenAI-compatible API (`openai` SDK) and `nvidia/nemotron-3.5-embed-1b` embeddings. **Google Gemini** (`@google/genai`) is the automatic fallback for both (`gemini-embedding-001` embeddings) |
 | Files | AWS S3 (or any S3-compatible store such as MinIO), `pdf-parse`, `mammoth` |
 | Email | Nodemailer via `@nestjs-modules/mailer` |
 | Tooling | Turborepo, pnpm 9, TypeScript 5.7, ESLint, Prettier, Jest, Supertest |
@@ -118,7 +118,7 @@ career-gap-ai/
 - **pnpm** ≥ 9 (`packageManager` is pinned to `pnpm@9.15.0`)
 - **PostgreSQL** 14+ with the **pgvector** extension available (the initial migration runs `CREATE EXTENSION vector`; your DB user needs permission to create extensions)
 - **Redis** 6+ (job queues and uploaded-job drafts)
-- A **Google Gemini API key**
+- An **NVIDIA API key** (build.nvidia.com, starts with `nvapi-`) and/or a **Google Gemini API key**. NVIDIA is tried first; Gemini is the fallback when NVIDIA fails or runs out of quota. Either one alone also works
 - An **S3 bucket** (or MinIO) for resume storage
 - *(Optional)* Google / LinkedIn OAuth apps and an SMTP server
 
@@ -181,16 +181,19 @@ The API loads `.env.local` then `.env` in development and `.env.production` when
 | `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN` | Refresh-token signing / TTL | TTL `30d` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | Google OAuth | callback `…/api/v1/auth/google/callback` |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_CALLBACK_URL` | LinkedIn OAuth | callback `…/api/v1/auth/linkedin/callback` |
-| `OPENAI_API_KEY` | **Gemini API key** (legacy variable name) | – |
-| `OPENAI_MODEL` | Gemini model for generation | see `.env.example` |
-| `OPENAI_EMBEDDING_MODEL` | Embedding model | `gemini-embedding-001` |
-| `OPENAI_BASE_URL`, `OPENAI_MAX_TOKENS`, `OPENAI_TEMPERATURE` | Optional tuning | temperature `0.3` |
+| `AI_PROVIDER_ORDER` | Chat/JSON providers tried in order; the next is used when one hits quota/is down | `nvidia,gemini` |
+| `AI_EMBEDDING_PROVIDER_ORDER` | Embedding providers tried in order | `nvidia,gemini` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Gemini (fallback for chat and embeddings) | `gemini-2.5-flash`, `gemini-embedding-001` |
+| `NVIDIA_API_KEY`, `NVIDIA_MODEL`, `NVIDIA_EMBEDDING_MODEL`, `NVIDIA_BASE_URL`, `NVIDIA_JSON_MODE` | NVIDIA NIM (primary; OpenAI-compatible; key starts with `nvapi-`). The embedding model must return 768 dimensions (`nemotron-3.5-embed-1b` supports `dimensions=768`; the 8B model returns 4096 and does not fit). `NVIDIA_JSON_MODE=true` enables `response_format: json_object` for models that support it | `nvidia/nemotron-3-ultra-550b-a55b`, `nvidia/nemotron-3.5-embed-1b`, `https://integrate.api.nvidia.com/v1`, `false` |
+| `AI_QUOTA_COOLDOWN_MS`, `AI_MAX_TOKENS`, `AI_TEMPERATURE` | Skip time for an exhausted provider / generation tuning | `600000`, `16000`, `0.3` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_S3_BUCKET` | S3 storage | region `us-east-1` |
 | `AWS_S3_ENDPOINT` | Optional – set for MinIO / S3-compatible stores (enables path-style) | – |
 | `THROTTLE_TTL`, `THROTTLE_LIMIT` | Rate limiting window (ms) / max requests | `60000` / `100` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Outgoing email (password reset) | – |
 
-> The `OPENAI_*` names are historical. The code uses `@google/genai`, so `OPENAI_API_KEY` must contain a **Gemini** key.
+> **Provider fallback.** `AiService` tries providers in `AI_PROVIDER_ORDER` (default `nvidia,gemini`). It fails over to the next provider on quota exhaustion, invalid/missing credentials, 5xx errors, network errors or repeated invalid JSON; it does not fail over on a bad request (400). A quota-exhausted provider is skipped for `AI_QUOTA_COOLDOWN_MS`. Providers without a key are skipped. Streaming can only fail over before the first chunk is sent. **Embeddings** follow `AI_EMBEDDING_PROVIDER_ORDER` the same way. All chunks of one document are embedded by the same provider and must be exactly 768 dimensions (the `vector(768)` columns). Vectors from different providers are not comparable, so if a fallback provider embedded some documents, similarity search across them is unreliable; today only writes happen (similarity helpers exist but are not called by any endpoint). Each call is recorded in `aiUsageLog` with the model that actually answered.
+>
+> Legacy setups that stored the Gemini key in `OPENAI_API_KEY` still work: a value not starting with `sk-` is treated as the Gemini key. Providers without a key are skipped.
 
 ### Frontend – `apps/web/.env.local`
 
@@ -215,6 +218,12 @@ The API loads `.env.local` then `.env` in development and `.env.production` when
 ### `apps/api`
 
 `dev`, `build`, `start` (runs `dist/main`), `lint`, `test`, `test:watch`, `test:cov`, `test:e2e`, `db:generate`, `db:migrate` / `db:migrate:prod` (migration check, then `prisma migrate deploy`), `db:migrate:new` (`prisma migrate dev --create-only`), `db:migrate:check`, `db:studio` (Prisma Studio).
+
+Maintenance scripts (run after `build`; each accepts `-- --dry-run` to preview):
+- `ats:backfill`: recompute ATS scores for existing resumes and analyses with the deterministic scorer (`src/common/scoring/ats-score.ts`). The resume score is "ATS readiness" (format and completeness); an analysis' ATS score is 40% format and 60% keyword match against the job.
+- `jobs:normalize-skills`: split phrase-style skills stored on older jobs ("Strong proficiency in Go (concurrency, channels)") into one skill per entry, so market stats and keyword matching count real skills. Run `ats:backfill` afterwards.
+
+**Market trends** are derived from the jobs in the database: demand is the share of active jobs naming a skill, and stats are published once at least 5 jobs exist (`GET /market/overview` reports the count). "Rising" and "declining" compare against a snapshot at least 7 days old, so until then the list shows the most in-demand skills.
 
 ### `apps/web`
 
@@ -262,8 +271,8 @@ Nothing is published until there are at least 5 active jobs; below that, the mar
 
 | Component | Role |
 |-----------|------|
-| `AiService` | Wraps Gemini: message mapping, JSON/text modes, retry with exponential backoff on 429/503 |
-| `EmbeddingService` | Embedding generation and raw-SQL writes to vector columns |
+| `AiService` | Multi-provider (Gemini, NVIDIA NIM) with retry/backoff and automatic failover on quota exhaustion or outages; providers live in `modules/ai/providers/` |
+| `EmbeddingService` | Embedding generation (NVIDIA first, Gemini fallback, 768 dims enforced) and raw-SQL writes to vector columns |
 | `resume-parser.agent` | Resume text → structured data |
 | `job-parser.agent` | Job description → structured job data (runs when a pasted job is created, or when an uploaded file is confirmed) |
 | `gap-analysis.agent` | Resume vs. job comparison |
@@ -374,9 +383,9 @@ Unit tests (Jest, no database needed) cover the job title/company detection, fil
 |---------|--------------------|
 | `type "vector" does not exist` / extension errors on migrate | Install pgvector and ensure the DB user can `CREATE EXTENSION` |
 | Resume/analysis stuck in `PENDING` | Redis not running or unreachable – the Bull workers can't pick up jobs |
-| Resume status `FAILED` | Check API logs: S3 credentials/bucket, unsupported/corrupt file, or Gemini errors |
-| AI calls failing with 429/503 | Gemini rate limit/overload; `AiService` retries with backoff up to 3 times |
-| "The AI service has reached its usage limit" | The Gemini key's quota is exhausted. Resume processing and saving a job (paste or upload) fail until it resets or the key is changed; uploading a job file and reviewing it still works, and the draft is kept for 15 minutes |
+| Resume status `FAILED` | Check API logs: S3 credentials/bucket, unsupported/corrupt file, or AI provider errors |
+| AI calls failing with 429/503 | Provider rate limit/overload; `AiService` retries briefly, then fails over to the next provider in `AI_PROVIDER_ORDER` |
+| "The AI service has reached its usage limit" | Every configured provider's quota is exhausted (with a single provider configured, that is its quota). Add or fix a key for the other provider, or wait for the reset. Resume processing and saving a job (paste or upload) fail until it resets or the key is changed; uploading a job file and reviewing it still works, and the draft is kept for 15 minutes |
 | "This upload has expired" when saving an uploaded job | The 15-minute draft expired; upload the file again |
 | Market endpoints return empty lists | Stats are computed from users' jobs and published only once at least 5 active jobs exist |
 | `prisma generate` fails with `EPERM` on `query_engine-windows.dll.node` (Windows) | A running API, test run or Prisma process has the engine file open; stop it and retry |
