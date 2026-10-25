@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Brain } from 'lucide-react';
+import { Brain, History, Plus } from 'lucide-react';
 import { getErrorMessage } from '@/lib/api-client';
 import {
   useCoachingSessions,
@@ -24,6 +24,7 @@ export default function CoachPage() {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -124,30 +125,44 @@ export default function CoachPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-4">
-      {/* Session sidebar */}
+    <div className="flex h-[calc(100dvh-10rem)] min-w-0 gap-4 md:h-[calc(100dvh-8rem)]">
+      {/* Session list: side panel on md+, drawer on phones */}
       <ChatSidebar
         sessions={sessions || []}
         activeSession={activeSession}
         onNewChat={newChat}
         onLoadSession={loadSession}
         onDeleteRequest={setSessionToDelete}
+        mobileOpen={historyOpen}
+        onMobileClose={() => setHistoryOpen(false)}
       />
 
       {/* Chat area */}
-      <div className="flex flex-1 flex-col glass-card overflow-hidden">
+      <div className="glass-card flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-foreground/[0.05] p-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-violet-500">
-            <Brain className="h-4.5 w-4.5 text-white" />
+        <div className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-gradient-to-r from-brand-500/10 via-transparent to-transparent p-3 sm:p-4">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 shadow-glow">
+            <Brain className="h-5 w-5 text-white" />
+            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-emerald-400" />
           </div>
-          <div>
-            <div className="font-semibold">CareerCoach AI</div>
-            <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Online • Ready to help
-            </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-display font-semibold">CareerCoach AI</div>
+            <div className="truncate text-xs text-emerald-400">Online • Ready to help</div>
           </div>
+          <button
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Open conversations"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          >
+            <History className="h-4 w-4" />
+          </button>
+          <button
+            onClick={newChat}
+            aria-label="New chat"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Messages */}

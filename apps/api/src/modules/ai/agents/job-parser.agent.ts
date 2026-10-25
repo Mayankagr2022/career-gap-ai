@@ -42,7 +42,7 @@ Return ONLY valid JSON:
   "company": "string",
   "location": "string or null",
   "remote": boolean,
-  "requiredSkills": ["one skill per entry, e.g. \"React\", \"PostgreSQL\", \"Team leadership\"; never a sentence, a list or text in parentheses"],
+  "requiredSkills": ["one skill per entry, e.g. "React", "PostgreSQL", "Team leadership"; never a sentence, a list or text in parentheses"],
   "preferredSkills": ["same format: one skill per entry"],
   "responsibilities": ["key job responsibilities"],
   "qualifications": ["required qualifications"],

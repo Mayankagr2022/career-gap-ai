@@ -34,10 +34,12 @@ export default function ResumesPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="font-display text-3xl font-bold">Resumes</h1>
-        <p className="mt-1 text-muted-foreground">Upload and manage your resumes for AI analysis</p>
+    <div className="min-w-0 space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-2">
+        <span className="eyebrow w-fit">Resume vault</span>
+        <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
+          Upload and manage your resumes for AI analysis
+        </p>
       </div>
 
       {/* Upload zone */}

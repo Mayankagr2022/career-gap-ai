@@ -7,6 +7,7 @@ import { Brain, ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useResetPassword } from '@/hooks/use-auth';
 import { useSearchParams } from 'next/navigation';
 import { passwordSchema } from '@career-gap-ai/shared';
+import { AuthShell } from '../_components/auth-shell';
 
 function ResetPasswordForm() {
   const [password, setPassword] = useState('');
@@ -45,7 +46,7 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="text-center">
-        <h1 className="mb-2 font-display text-2xl font-bold">Invalid Link</h1>
+        <h1 className="mb-2 font-display text-3xl font-bold">Invalid Link</h1>
         <p className="mb-8 text-sm text-muted-foreground">
           This password reset link is invalid or has expired.
         </p>
@@ -58,7 +59,7 @@ function ResetPasswordForm() {
 
   return (
     <>
-      <h1 className="mb-2 font-display text-2xl font-bold">Set new password</h1>
+      <h1 className="mb-2 font-display text-3xl font-bold">Set new password</h1>
       <p className="mb-8 text-sm text-muted-foreground">
         Please enter your new password below.
       </p>
@@ -113,35 +114,12 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      {/* Background decorations */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-brand-500/8 blur-3xl" />
-        <div className="absolute right-1/4 bottom-1/4 h-64 w-64 rounded-full bg-violet-500/8 blur-3xl" />
+    <AuthShell>
+      <div className="text-center">
+        <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-brand-400" /></div>}>
+          <ResetPasswordForm />
+        </Suspense>
       </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative w-full max-w-md"
-      >
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-violet-500">
-              <Brain className="h-5 w-5 text-white" />
-            </div>
-            <span className="font-display text-xl font-bold gradient-text">CareerGap AI</span>
-          </Link>
-        </div>
-
-        {/* Card */}
-        <div className="glass-card p-8 text-center">
-          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>}>
-            <ResetPasswordForm />
-          </Suspense>
-        </div>
-      </motion.div>
-    </div>
+    </AuthShell>
   );
 }

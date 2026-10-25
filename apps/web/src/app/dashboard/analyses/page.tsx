@@ -50,7 +50,7 @@ function NewAnalysisModal({ onClose }: { onClose: () => void }) {
             <h2 className="font-display text-xl font-bold">New Analysis</h2>
             <p className="text-sm text-muted-foreground mt-0.5">AI will compare your resume to the job</p>
           </div>
-          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+          <button onClick={onClose} aria-label="Close" className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/5"><X className="h-5 w-5 text-muted-foreground" /></button>
         </div>
 
         <div className="space-y-4">
@@ -157,30 +157,36 @@ export default function AnalysesPage() {
   }) || [];
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Analyses</h1>
-          <p className="mt-1 text-muted-foreground">Compare your resumes against job descriptions</p>
+    <div className="space-y-6">
+      <div className="glass-card relative flex flex-col justify-between gap-4 overflow-hidden p-5 sm:flex-row sm:items-center sm:p-6">
+        <div className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full bg-brand-500/20 blur-3xl" />
+        <div className="relative min-w-0">
+          <span className="eyebrow"><BarChart3 className="h-3 w-3" /> Analyses</span>
+          <p className="mt-2 text-sm text-muted-foreground">Compare your resumes against job descriptions</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary py-2.5 px-5 text-sm w-full sm:w-auto shrink-0">
+        <button onClick={() => setShowModal(true)} className="btn-primary relative w-full shrink-0 px-5 py-2.5 text-sm sm:w-auto">
           <Plus className="h-4 w-4 shrink-0" /> New Analysis
         </button>
       </div>
 
-      <div className="flex items-center gap-2 border-b border-border pb-px">
+      <div className="inline-flex rounded-2xl border border-white/10 bg-white/[0.04] p-1">
         {(['COMPLETED', 'FAILED'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              'px-4 py-2.5 text-sm font-medium transition-colors relative -mb-px',
-              activeTab === tab 
-                ? 'text-foreground border-b-2 border-brand-500' 
-                : 'text-muted-foreground hover:text-foreground border-b-2 border-transparent'
+              'relative min-h-[40px] rounded-xl px-5 text-sm font-medium transition-colors',
+              activeTab === tab ? 'text-white' : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            {tab.charAt(0) + tab.slice(1).toLowerCase()}
+            {activeTab === tab && (
+              <motion.span
+                layoutId="analyses-tab"
+                transition={{ duration: 0.2 }}
+                className="absolute inset-0 rounded-xl bg-gradient-to-r from-brand-500/60 to-violet-500/40 shadow-glow"
+              />
+            )}
+            <span className="relative">{tab.charAt(0) + tab.slice(1).toLowerCase()}</span>
           </button>
         ))}
       </div>
@@ -188,68 +194,101 @@ export default function AnalysesPage() {
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 shimmer rounded-2xl" />
+            <div key={i} className="h-24 shimmer rounded-2xl" />
           ))}
         </div>
       ) : filteredAnalyses.length > 0 ? (
-        <div className="space-y-3">
-          {filteredAnalyses.map((analysis) => (
-            <Link key={analysis.id} href={`/dashboard/analyses/view?id=${analysis.id}`} className="block">
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="glass-card-hover flex items-center gap-4 p-4 min-w-0 overflow-hidden"
-              >
-                {/* Score */}
-                <div className={cn(
-                  'flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-bold font-display',
-                  analysis.status === 'COMPLETED' ? getScoreColor(analysis.matchScore) : 'text-muted-foreground',
-                  'bg-background shadow-sm border border-border/50',
-                )}>
-                  {analysis.status === 'COMPLETED' ? `${Math.round(analysis.matchScore)}` :
-                   analysis.status === 'PROCESSING' || analysis.status === 'PENDING' ?
-                   <Loader2 className="h-6 w-6 animate-spin text-brand-400" /> :
-                   <AlertCircle className="h-6 w-6 text-red-400" />}
-                </div>
-
-                {/* Info */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">
-                      {analysis.job?.title} @ {analysis.job?.company}
-                    </span>
-                    <span className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
-                      analysis.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' :
-                      analysis.status === 'PROCESSING' ? 'bg-brand-500/10 text-brand-400' :
-                      analysis.status === 'PENDING' ? 'bg-muted text-muted-foreground' :
-                      'bg-red-500/10 text-red-400',
-                    )}>
-                      {analysis.status}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-                    <span className="truncate">{analysis.resume?.originalName}</span>
-                    <span className="shrink-0">•</span>
-                    <span className="shrink-0">{formatRelativeTime(analysis.createdAt)}</span>
-                    {analysis.status === 'COMPLETED' && (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {filteredAnalyses.map((analysis, i) => {
+            const done = analysis.status === 'COMPLETED';
+            const score = Math.max(0, Math.min(100, Math.round(analysis.matchScore || 0)));
+            const r = 22;
+            const c = 2 * Math.PI * r;
+            return (
+              <Link key={analysis.id} href={`/dashboard/analyses/view?id=${analysis.id}`} className="block min-w-0">
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: Math.min(i, 8) * 0.04 }}
+                  className="glass-card-hover group flex min-w-0 items-center gap-4 overflow-hidden p-4"
+                >
+                  {/* Score ring */}
+                  <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
+                    {done ? (
                       <>
-                        <span className="shrink-0">•</span>
-                        <span className="shrink-0">ATS: {Math.round(analysis.atsScore)}%</span>
+                        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 52 52">
+                          <defs>
+                            <linearGradient id={`al-${analysis.id}`} x1="0" y1="0" x2="1" y2="1">
+                              <stop offset="0%" stopColor="#a78bfa" />
+                              <stop offset="100%" stopColor="#f472b6" />
+                            </linearGradient>
+                          </defs>
+                          <circle cx="26" cy="26" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                          <motion.circle
+                            cx="26" cy="26" r={r} fill="none"
+                            stroke={`url(#al-${analysis.id})`}
+                            strokeWidth="4" strokeLinecap="round"
+                            strokeDasharray={c}
+                            initial={{ strokeDashoffset: c }}
+                            animate={{ strokeDashoffset: c - (score / 100) * c }}
+                            transition={{ duration: 0.9, ease: 'easeOut' }}
+                          />
+                        </svg>
+                        <span className={cn('relative font-display text-sm font-bold', getScoreColor(analysis.matchScore))}>
+                          {score}
+                        </span>
                       </>
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+                        {analysis.status === 'PROCESSING' || analysis.status === 'PENDING' ?
+                          <Loader2 className="h-5 w-5 animate-spin text-brand-400" /> :
+                          <AlertCircle className="h-5 w-5 text-red-400" />}
+                      </div>
                     )}
                   </div>
-                </div>
 
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </motion.div>
-            </Link>
-          ))}
+                  {/* Info */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-display font-semibold">
+                        {analysis.job?.title} @ {analysis.job?.company}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">{analysis.resume?.originalName}</span>
+                      <span className="shrink-0">•</span>
+                      <span className="shrink-0">{formatRelativeTime(analysis.createdAt)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className={cn(
+                        'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                        analysis.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' :
+                        analysis.status === 'PROCESSING' ? 'bg-brand-500/15 text-brand-300' :
+                        analysis.status === 'PENDING' ? 'bg-white/5 text-muted-foreground' :
+                        'bg-red-500/10 text-red-400',
+                      )}>
+                        {analysis.status}
+                      </span>
+                      {done && (
+                        <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
+                          ATS {Math.round(analysis.atsScore)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                </motion.div>
+              </Link>
+            );
+          })}
         </div>
       ) : (
-        <div className="glass-card flex flex-col items-center justify-center py-16 text-center">
-          <BarChart3 className="mb-4 h-12 w-12 text-muted-foreground/30" />
-          <p className="font-semibold">No {activeTab.toLowerCase()} analyses found</p>
+        <div className="glass-card flex flex-col items-center justify-center px-4 py-16 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500/10">
+            <BarChart3 className="h-8 w-8 text-brand-300" />
+          </div>
+          <p className="font-display font-semibold">No {activeTab.toLowerCase()} analyses found</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {`You don't have any ${activeTab.toLowerCase()} analyses right now.`}
           </p>

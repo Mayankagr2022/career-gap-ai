@@ -44,13 +44,14 @@ export function NotificationsDropdown() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors"
+        aria-label="Notifications"
+        className="relative flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
           <span
             aria-label={`${unreadCount} unread notifications`}
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-500 px-1 text-[10px] font-semibold leading-none text-white"
+            className="absolute -right-1 -top-1 flex h-4 min-w-4 animate-pulse-ring items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-violet-500 px-1 text-[10px] font-semibold leading-none text-white"
           >
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
@@ -64,7 +65,7 @@ export function NotificationsDropdown() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-[380px] z-50 overflow-hidden rounded-2xl border border-foreground/[0.06] bg-background shadow-[0_8px_40px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+            className="fixed inset-x-3 top-[4.5rem] z-50 overflow-hidden rounded-3xl border border-white/10 bg-popover shadow-[0_30px_80px_-20px_hsl(262_90%_40%/0.6)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[380px]"
           >
             <div className="flex items-center justify-between border-b border-foreground/[0.06] bg-foreground/[0.02] px-5 py-4">
               <h3 className="font-display font-semibold tracking-tight">Notifications</h3>

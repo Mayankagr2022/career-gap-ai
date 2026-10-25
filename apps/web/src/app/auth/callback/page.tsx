@@ -2,6 +2,7 @@
 
 import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { Brain, Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api-client';
@@ -50,16 +51,28 @@ function CallbackHandler() {
   }, [searchParams, router, setAuth]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-      <div className="relative flex flex-col items-center gap-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-violet-500">
-          <Brain className="h-7 w-7 text-white" />
+    <div className="flex min-h-screen items-center justify-center px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.35 }}
+        className="glass-card relative flex w-full max-w-sm flex-col items-center gap-6 overflow-hidden px-6 py-10 text-center"
+      >
+        <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-brand-500/25 blur-3xl" />
+        <div className="relative flex h-24 w-24 items-center justify-center">
+          <div className="absolute inset-0 animate-spin rounded-full bg-[conic-gradient(from_0deg,transparent_0_40%,hsl(262_90%_62%)_70%,hsl(325_90%_60%)_90%,hsl(188_95%_50%)_100%)] [animation-duration:1.4s] [mask:radial-gradient(farthest-side,transparent_calc(100%-3px),#000_calc(100%-3px))] [-webkit-mask:radial-gradient(farthest-side,transparent_calc(100%-3px),#000_calc(100%-3px))]" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-violet-500 shadow-glow">
+            <Brain className="h-7 w-7 text-white" />
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm">Completing sign in...</span>
+        <div className="relative">
+          <h1 className="font-display text-xl font-bold">Signing you in</h1>
+          <p className="mt-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Completing sign in...
+          </p>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

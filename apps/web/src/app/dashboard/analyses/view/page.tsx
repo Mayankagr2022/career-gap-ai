@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Loader2, AlertCircle, Lightbulb, Map, BarChart3
+  ArrowLeft, Loader2, AlertCircle, Lightbulb, Map, BarChart3, FileText, Clock
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAnalysis } from '@/hooks/use-analyses';
@@ -22,21 +22,23 @@ function AnalysisDetail() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 shimmer rounded-lg" />
-        <div className="h-48 shimmer rounded-2xl" />
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="h-64 shimmer rounded-2xl" />
-          <div className="h-64 shimmer rounded-2xl" />
+        <div className="h-16 shimmer rounded-2xl" />
+        <div className="grid gap-4 lg:grid-cols-5">
+          <div className="h-72 shimmer rounded-2xl lg:col-span-3" />
+          <div className="h-72 shimmer rounded-2xl lg:col-span-2" />
         </div>
+        <div className="h-64 shimmer rounded-2xl" />
       </div>
     );
   }
 
   if (!analysis) {
     return (
-      <div className="glass-card flex flex-col items-center py-20 text-center">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-400" />
-        <h2 className="font-semibold">Analysis not found</h2>
+      <div className="glass-card flex flex-col items-center px-4 py-20 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10">
+          <AlertCircle className="h-8 w-8 text-rose-400" />
+        </div>
+        <h2 className="font-display text-lg font-semibold">Analysis not found</h2>
         <Link href="/dashboard/analyses" className="mt-4 btn-secondary py-2 px-4 text-sm">Go Back</Link>
       </div>
     );
@@ -45,33 +47,45 @@ function AnalysisDetail() {
   const isProcessing = analysis.status === 'PROCESSING' || analysis.status === 'PENDING';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/analyses" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors">
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-3 sm:gap-4"
+      >
+        <Link
+          href="/dashboard/analyses"
+          aria-label="Back to analyses"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-muted-foreground transition-colors hover:border-brand-400/40 hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div>
-          <h1 className="font-display text-2xl font-bold">
-            {analysis.job?.title} @ {analysis.job?.company}
+        <div className="min-w-0">
+          <h1 className="truncate font-display text-xl font-bold sm:text-2xl">
+            {analysis.job?.title} <span className="text-muted-foreground">@</span>{' '}
+            <span className="gradient-text">{analysis.job?.company}</span>
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {analysis.resume?.originalName} • {formatRelativeTime(analysis.createdAt)}
+          <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground sm:text-sm">
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{analysis.resume?.originalName}</span>
+            <Clock className="ml-1 h-3.5 w-3.5 shrink-0" />
+            <span className="shrink-0">{formatRelativeTime(analysis.createdAt)}</span>
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Processing state */}
       {isProcessing && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="glass-card flex flex-col items-center justify-center py-16 text-center"
+          className="glass-card flex flex-col items-center justify-center px-4 py-16 text-center"
         >
           <div className="relative mb-6">
-            <div className="h-16 w-16 rounded-full border-4 border-brand-500/20 border-t-brand-500 animate-spin" />
+            <div className="h-20 w-20 animate-spin rounded-full border-4 border-brand-500/20 border-t-brand-400" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <BarChart3 className="h-6 w-6 text-brand-400" />
+              <BarChart3 className="h-7 w-7 text-brand-300" />
             </div>
           </div>
           <h2 className="font-display text-xl font-semibold">AI Analysis in Progress</h2>
@@ -86,9 +100,11 @@ function AnalysisDetail() {
 
       {/* Failed state */}
       {analysis.status === 'FAILED' && (
-        <div className="glass-card flex flex-col items-center py-12 text-center">
-          <AlertCircle className="mb-4 h-12 w-12 text-red-400" />
-          <h2 className="font-semibold">Analysis Failed</h2>
+        <div className="glass-card flex flex-col items-center px-4 py-12 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10">
+            <AlertCircle className="h-8 w-8 text-rose-400" />
+          </div>
+          <h2 className="font-display text-lg font-semibold">Analysis Failed</h2>
           <p className="mt-1 max-w-md break-words text-sm text-muted-foreground">
             {analysis.errorMessage || 'Something went wrong. Please try creating a new analysis.'}
           </p>
@@ -104,28 +120,28 @@ function AnalysisDetail() {
 
           {/* Recommendations & Roadmap links */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Link href="/dashboard/recommendations" className="glass-card-hover flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-400">
+            <Link href="/dashboard/recommendations" className="glass-card-hover group flex min-w-0 items-center gap-4 p-5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-400 shadow-glow">
                 <Lightbulb className="h-6 w-6 text-white" />
               </div>
-              <div>
-                <div className="font-semibold">View Recommendations</div>
+              <div className="min-w-0">
+                <div className="font-display font-semibold">View Recommendations</div>
                 <div className="text-sm text-muted-foreground">
                   {analysis.aiRecommendations?.length || 0} personalized suggestions
                 </div>
               </div>
-              <ArrowLeft className="ml-auto h-4 w-4 rotate-180 text-muted-foreground" />
+              <ArrowLeft className="ml-auto h-4 w-4 shrink-0 rotate-180 text-muted-foreground transition-transform group-hover:translate-x-1" />
             </Link>
 
-            <Link href="/dashboard/roadmaps" className="glass-card-hover flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-pink-400">
+            <Link href="/dashboard/roadmaps" className="glass-card-hover group flex min-w-0 items-center gap-4 p-5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-violet-500 shadow-glow">
                 <Map className="h-6 w-6 text-white" />
               </div>
-              <div>
-                <div className="font-semibold">Career Roadmap</div>
+              <div className="min-w-0">
+                <div className="font-display font-semibold">Career Roadmap</div>
                 <div className="text-sm text-muted-foreground">Your week-by-week plan</div>
               </div>
-              <ArrowLeft className="ml-auto h-4 w-4 rotate-180 text-muted-foreground" />
+              <ArrowLeft className="ml-auto h-4 w-4 shrink-0 rotate-180 text-muted-foreground transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
         </>
