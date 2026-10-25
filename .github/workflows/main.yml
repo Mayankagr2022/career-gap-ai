@@ -1,8 +1,12 @@
 name: CI and Deploy
 
-# Pull requests and pushes to main run the checks. A push to main that passes them is also deployed to a server
-# running Docker Compose (see deploy/README.md for the one-time server setup), after approval of the "production"
-# environment. The deploy job only runs once the repository variable DEPLOY_ENABLED is "true". The AWS ECS alternative lives in deploy-aws.yml and only runs when started by hand.
+# Pull requests and pushes to main run the checks. A push to main that passes them is also published:
+#  - the website is built as static files and hosted on GitHub Pages (job "pages", runs once the repository variable
+#    API_URL is set, because the site needs to know where the API lives);
+#  - the API is built as a Docker image on GitHub and deployed to a server running Docker Compose (job "deploy", see
+#    deploy/README.md for the one-time server setup), after approval of the "production" environment. It only runs
+#    once the repository variable DEPLOY_ENABLED is "true".
+# The AWS ECS alternative lives in deploy-aws.yml and only runs when started by hand.
 
 on:
   push:
@@ -57,6 +61,16 @@ jobs:
       - name: Production build
         run: pnpm build
 
+      # The GitHub Pages build: catches pages that cannot be exported before they reach main
+      - name: Static site build
+        run: pnpm --filter @career-gap-ai/web exec next build
+        env:
+          NEXT_OUTPUT: export
+          NEXT_PUBLIC_AUTH_MODE: token
+          NEXT_PUBLIC_BASE_PATH: /career-gap-ai
+          NEXT_PUBLIC_API_URL: https://api.example.com/api/v1
+          NEXT_PUBLIC_APP_URL: https://example.github.io/career-gap-ai
+
   images:
     name: Build Docker images
     if: github.event_name == 'pull_request'
@@ -75,20 +89,8 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
-      - name: Build the web image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          push: false
-          build-args: |
-            NEXT_PUBLIC_API_URL=https://app.example.com/api/v1
-            NEXT_PUBLIC_APP_URL=https://app.example.com
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
-
   deploy:
-    name: Build images and deploy to the server
+    name: Build the API image and deploy to the server
     needs: [check]
     # Skipped (not failed) until the repository variable DEPLOY_ENABLED is "true", which you set once the server and the
     # secrets below exist (see deploy/README.md). Until then pushes are only checked.
@@ -98,7 +100,7 @@ jobs:
     # Add required reviewers to this environment in the repository settings to gate production deploys.
     environment:
       name: production
-      url: ${{ vars.PUBLIC_URL }}
+      url: ${{ vars.API_URL }}
     permissions:
       contents: read
       packages: write # push the images to the GitHub Container Registry
@@ -112,16 +114,16 @@ jobs:
       - name: Check the repository is configured for deploys
         run: |
           missing=""
-          for name in PUBLIC_URL SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+          for name in API_URL SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
             eval "value=\${VAR_$name}"
             [ -n "$value" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::Set these in Settings > Secrets and variables > Actions (PUBLIC_URL is a variable, the others are secrets):$missing"
+            echo "::error::Set these in Settings > Secrets and variables > Actions (API_URL is a variable, the others are secrets):$missing"
             exit 1
           fi
         env:
-          VAR_PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          VAR_API_URL: ${{ vars.API_URL }}
           VAR_SSH_HOST: ${{ secrets.SSH_HOST }}
           VAR_SSH_USER: ${{ secrets.SSH_USER }}
           VAR_SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -149,20 +151,6 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/api:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
-
-      # NEXT_PUBLIC_* values are compiled into the browser bundle, so they are build arguments
-      - name: Build and push the web image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_URL }}/api/v1
-            NEXT_PUBLIC_APP_URL=${{ vars.PUBLIC_URL }}
-          tags: ${{ env.IMAGE_PREFIX }}/web:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
 
       - name: Set up SSH
         run: |
@@ -196,3 +184,50 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
+
+  pages:
+    name: Build the website and publish it to GitHub Pages
+    needs: [check]
+    # Skipped until the repository variable API_URL (the API's address, e.g. https://api.example.com) is set and Pages is
+    # switched to "GitHub Actions" as its source (Settings > Pages).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.API_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @career-gap-ai/shared build
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      # NEXT_PUBLIC_* values are compiled into the browser bundle. The site lives under /<repository>/ on github.io,
+      # and is on another address than the API, so sign-in uses tokens instead of cookies (AUTH_TOKEN_MODE on the API).
+      - name: Build the static site
+        run: pnpm --filter @career-gap-ai/web exec next build
+        env:
+          NEXT_OUTPUT: export
+          NEXT_PUBLIC_AUTH_MODE: token
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          NEXT_PUBLIC_API_URL: ${{ vars.API_URL }}/api/v1
+          NEXT_PUBLIC_APP_URL: ${{ steps.pages.outputs.base_url }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/.next-export
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

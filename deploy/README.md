@@ -122,7 +122,7 @@ In the repository, *Settings*:
   | Variable | Value |
   |---|---|
   | `DEPLOY_ENABLED` | `true`, set last: until it is set, pushes to `main` are only checked and the deploy job is skipped |
-  | `PUBLIC_URL` | `https://app.example.com` (baked into the web bundle at build time) |
+  | `API_URL` | `https://api.example.com`: the API's public address (no trailing slash). It is baked into the website at build time, and setting it also switches on the GitHub Pages publish |
   | `SSH_PORT` | Optional, default `22` |
   | `DEPLOY_PATH` | Optional, default `/opt/careergap` |
 
@@ -131,10 +131,10 @@ In the repository, *Settings*:
 With `DEPLOY_ENABLED=true` set, push to `main` (or run the workflow by hand) and approve the `production` environment. The workflow:
 
 1. type-checks, tests and builds the code;
-2. builds the API and web images and pushes them to the GitHub Container Registry
-   (`ghcr.io/<owner>/<repo>/api` and `/web`, tagged with the commit);
+2. builds the API image and pushes it to the GitHub Container Registry
+   (`ghcr.io/<owner>/<repo>/api`, tagged with the commit);
 3. copies `docker-compose.yml`, `Caddyfile` and the scripts to the server (your `.env` is not touched);
-4. runs `deploy.sh` there: pull images, start PostgreSQL and Redis, **run database migrations**, start the new version,
+4. runs `deploy.sh` there: pull the image, start PostgreSQL and Redis, **run database migrations**, start the new version,
    wait for it to be healthy, and check the public health endpoint.
 
 If the migrations fail, nothing running is changed. If the new version does not become healthy, `deploy.sh` switches back to the
@@ -179,3 +179,16 @@ Restore with the command in the header of `backup.sh`. Resume files live in your
 - **No web application firewall, monitoring or alerts.** Add an uptime check on `https://<domain>/api/v1/health/ready`.
 - Install security updates regularly (for example the `unattended-upgrades` package on Ubuntu).
 - Anyone who can SSH as `deploy` can control Docker and therefore the whole machine; protect that key.
+
+## The website on GitHub Pages
+
+The website is not served from this server. The `pages` job in `main.yml` builds it as static files and publishes it to GitHub Pages
+(`https://<owner>.github.io/<repo>/`) on every push to `main`, once the variable `API_URL` is set. To switch it on:
+
+1. *Settings > Pages > Build and deployment > Source*: **GitHub Actions**.
+2. Set the variable `API_URL` (above) to the API's address.
+3. On the server, set `FRONTEND_URL` in `.env` to the Pages address (`https://<owner>.github.io/<repo>`, no trailing slash). The API only accepts browser calls from that address.
+
+The site and the API are on different addresses, so the browser cannot use the API's cookies. The server runs with `AUTH_TOKEN_MODE=true` (set in
+`docker-compose.yml`): sign-in returns tokens, which the website keeps in the browser's local storage and sends as a `Bearer` header. Social login
+(Google, LinkedIn) hands the tokens back in the address fragment, which is never sent to a server. Set their callback URLs to `https://<DOMAIN>/api/v1/auth/<provider>/callback`.
