@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
@@ -7,6 +7,9 @@ export function useAnalyses() {
   return useQuery({
     queryKey: ['analyses'],
     queryFn: () => api.get<any[]>('/analyses'),
+    // Keep the list fresh while any analysis is still running
+    refetchInterval: (query) =>
+      query.state.data?.some((a) => a.status === 'PENDING' || a.status === 'PROCESSING') ? 3000 : false,
   });
 }
 
@@ -43,7 +46,7 @@ export function useCreateAnalysis() {
       router.push(`/dashboard/analyses/${data.id}`);
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message?.[0] || 'Analysis failed to start');
+      toast.error(getErrorMessage(error, 'Analysis failed to start'));
     },
   });
 }
@@ -53,6 +56,9 @@ export function useDeleteAnalysis() {
 
   return useMutation({
     mutationFn: (id: string) => api.delete(`/analyses/${id}`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to delete analysis'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyses'] });
       toast.success('Analysis deleted');

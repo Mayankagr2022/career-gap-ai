@@ -1,5 +1,6 @@
 import { IsString, IsOptional, IsBoolean, IsObject, IsNumber, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class CreateJobDto {
   @ApiProperty({ example: 'Senior Software Engineer' })
@@ -24,6 +25,7 @@ export class CreateJobDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
+  @Transform(({ obj }) => obj.remote)
   @IsBoolean()
   remote?: boolean;
 

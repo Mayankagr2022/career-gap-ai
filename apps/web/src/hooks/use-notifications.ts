@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 export interface Notification {
   id: string;
@@ -23,6 +24,9 @@ export function useNotifications() {
 
   const markAsRead = useMutation({
     mutationFn: (id: string) => api.patch(`/notifications/${id}/read`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to mark notification as read'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
@@ -30,6 +34,9 @@ export function useNotifications() {
 
   const markAllAsRead = useMutation({
     mutationFn: () => api.patch('/notifications/read-all'),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to mark notifications as read'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },

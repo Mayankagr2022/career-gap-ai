@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
+export const EMBEDDING_DIMENSIONS = 768;
+
 @Injectable()
 export class EmbeddingService {
   private readonly genai: GoogleGenAI;
@@ -24,6 +26,8 @@ export class EmbeddingService {
     const response = await this.genai.models.embedContent({
       model: this.embeddingModel,
       contents: text.substring(0, 8000), // Token limit safety
+      // Must match the vector(768) columns (and stay under pgvector's 2000-dim HNSW limit)
+      config: { outputDimensionality: EMBEDDING_DIMENSIONS },
     });
     if (!response.embeddings || response.embeddings.length === 0 || !response.embeddings[0].values) {
       return [];
@@ -51,7 +55,7 @@ export class EmbeddingService {
       const vectorStr = `[${embeddings[i].join(',')}]`;
       await this.prisma.$executeRaw`
         INSERT INTO resume_embeddings (id, "resumeId", content, embedding, "chunkIndex", "createdAt")
-        VALUES (uuid_generate_v4(), ${resumeId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
+        VALUES (gen_random_uuid(), ${resumeId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
       `;
     }
 
@@ -68,7 +72,7 @@ export class EmbeddingService {
       const vectorStr = `[${embeddings[i].join(',')}]`;
       await this.prisma.$executeRaw`
         INSERT INTO job_embeddings (id, "jobId", content, embedding, "chunkIndex", "createdAt")
-        VALUES (uuid_generate_v4(), ${jobId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
+        VALUES (gen_random_uuid(), ${jobId}::uuid, ${chunks[i]}, ${vectorStr}::vector, ${i}, NOW())
       `;
     }
   }

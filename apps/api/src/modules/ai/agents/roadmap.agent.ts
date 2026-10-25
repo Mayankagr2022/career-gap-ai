@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AiService } from '../ai.service';
+import { asArray, asNumber, asString } from './ai-output.util';
 import { ParsedResume } from '@career-gap-ai/shared';
 import { GapAnalysisResult } from './gap-analysis.agent';
 import { ParsedJob } from './job-parser.agent';
@@ -47,7 +48,7 @@ CURRENT STATE:
 
 TARGET ROLE: ${job.title} at ${job.company}
 MATCH SCORE: ${gaps.matchScore}%
-KEY GAPS: ${gaps.skillGaps.filter((g) => g.importance === 'CRITICAL').map((g) => g.skill).join(', ')}
+KEY GAPS: ${(gaps.skillGaps ?? []).filter((g) => g.importance === 'CRITICAL').map((g) => g.skill).join(', ')}
 
 AVAILABLE RECOMMENDATIONS:
 ${recommendations.slice(0, 6).map((r) => `- ${r.title} (${r.type}, ${r.duration})`).join('\n')}
@@ -83,7 +84,23 @@ Return ONLY valid JSON:
       { temperature: 0.3 },
     );
 
-    this.logger.log(`Roadmap generated with ${result.milestones?.length || 0} milestones`);
+    // Normalise untrusted model output
+    result.title = asString(result.title, `Your Path to ${job.title}`);
+    result.targetRole = asString(result.targetRole, job.title);
+    result.milestones = asArray<any>(result.milestones)
+      .filter((m) => m && asString(m.title))
+      .map((m, mi) => ({
+        ...m,
+        id: asString(m.id, `milestone-${mi + 1}`),
+        title: asString(m.title),
+        description: asString(m.description),
+        week: asNumber(m.week, (mi + 1) * 4),
+        tasks: asArray<any>(m.tasks)
+          .filter((t) => t && asString(t.title))
+          .map((t, ti) => ({ ...t, id: asString(t.id, `task-${mi + 1}-${ti + 1}`), title: asString(t.title), description: asString(t.description) })),
+      }));
+
+    this.logger.log(`Roadmap generated with ${result.milestones.length} milestones`);
     return result;
   }
 }

@@ -16,6 +16,8 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
@@ -24,6 +26,10 @@ import { LinkedInAuthGuard } from './guards/linkedin-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
+
+/** Brute-force guard for credential endpoints: per-IP, default 10 requests/minute. */
+const AUTH_THROTTLE = { default: { limit: Number(process.env.AUTH_THROTTLE_LIMIT ?? 10), ttl: 60_000 } };
 
 function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }, isProduction: boolean) {
   const cookieOptions = {
@@ -52,6 +58,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new user account' })
@@ -65,6 +72,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -113,22 +121,21 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: Number(process.env.AUTH_THROTTLE_LIMIT ?? 5), ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request password reset email' })
-  async forgotPassword(@Body() dto: { email: string }) {
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
     await this.authService.forgotPassword(dto.email);
     return { message: 'If an account exists with this email, a password reset link has been sent.' };
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using token' })
-  async resetPassword(@Body() dto: any) {
-    if (!dto.token || !dto.password) {
-      throw new BadRequestException('Token and new password are required');
-    }
+  async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPassword(dto.token, dto.password);
     return { message: 'Password has been successfully reset' };
   }

@@ -4,11 +4,15 @@ import { RoadmapsService } from './roadmaps.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IsString, IsBoolean } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 class UpdateTaskDto {
   @IsString() milestoneId: string;
   @IsString() taskId: string;
-  @IsBoolean() completed: boolean;
+  // Use the raw value so "yes"/"false" strings aren't silently coerced by implicit conversion
+  @Transform(({ obj }) => obj.completed)
+  @IsBoolean()
+  completed: boolean;
 }
 
 @ApiTags('roadmaps')

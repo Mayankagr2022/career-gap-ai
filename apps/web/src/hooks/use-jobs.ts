@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface CreateJobData {
@@ -36,7 +36,7 @@ export function useCreateJob() {
       toast.success('Job added and AI is parsing requirements...');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message?.[0] || 'Failed to create job');
+      toast.error(getErrorMessage(error, 'Failed to create job'));
     },
   });
 }
@@ -46,6 +46,9 @@ export function useDeleteJob() {
 
   return useMutation({
     mutationFn: (id: string) => api.delete(`/jobs/${id}`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to delete job'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       toast.success('Job removed');

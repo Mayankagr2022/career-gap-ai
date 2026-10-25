@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AiService } from '../ai.service';
+import { asStringArray } from './ai-output.util';
 
 export interface ParsedJob {
   title: string;
@@ -58,9 +59,11 @@ Return ONLY valid JSON:
       { temperature: 0.1 },
     );
 
-    result.requiredSkills = [...new Set(result.requiredSkills.map((s) => s.trim()))];
-    result.preferredSkills = [...new Set(result.preferredSkills.map((s) => s.trim()))];
-    result.keyKeywords = [...new Set(result.keyKeywords.map((k) => k.trim()))];
+    result.requiredSkills = asStringArray(result.requiredSkills);
+    result.preferredSkills = asStringArray(result.preferredSkills);
+    result.keyKeywords = asStringArray(result.keyKeywords);
+    result.responsibilities = asStringArray(result.responsibilities);
+    result.qualifications = asStringArray(result.qualifications);
 
     return result;
   }

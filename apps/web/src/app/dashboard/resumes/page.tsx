@@ -10,7 +10,7 @@ import { ResumeDetailModal } from './_components/resume-detail-modal';
 
 export default function ResumesPage() {
   const { data: resumes, isLoading } = useResumes();
-  const { mutate: upload } = useUploadResume();
+  const { mutate: upload, isPending: isUploading } = useUploadResume();
   const { mutate: deleteResume } = useDeleteResume();
   const [selectedResume, setSelectedResume] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
@@ -41,13 +41,15 @@ export default function ResumesPage() {
       </div>
 
       {/* Upload zone */}
-      <ResumeUploader onUpload={upload} />
+      <ResumeUploader onUpload={upload} isPending={isUploading} />
 
       {/* Resume list */}
       <ResumeList
         resumes={resumes || []}
         onView={setSelectedResume}
-        onDelete={deleteResume}
+        onDelete={(id) => {
+          if (window.confirm('Delete this resume? This also removes its analyses.')) deleteResume(id);
+        }}
       />
 
       {/* Resume detail modal */}

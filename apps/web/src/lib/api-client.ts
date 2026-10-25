@@ -37,7 +37,11 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Credential endpoints return 401 for bad input; refreshing a session makes no sense there
+    // and would replace the real error ("Invalid email or password") with the refresh failure.
+    const isAuthEndpoint = /\/auth\/(login|register|refresh|forgot-password|reset-password)/.test(originalRequest?.url ?? '');
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -61,7 +65,8 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError as AxiosError);
         useAuthStore.getState().clearAuth();
-        return Promise.reject(refreshError);
+        // Surface the original failure, not the (less useful) refresh failure
+        return Promise.reject(error);
       } finally {
         isRefreshing = false;
       }
@@ -70,6 +75,16 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+// Pulls a user-facing message out of an API error; the API returns `message` as an array but
+// middleware errors and network failures may not.
+export const getErrorMessage = (error: any, fallback: string): string => {
+  const message = error?.response?.data?.message;
+  if (Array.isArray(message)) return message[0] || fallback;
+  if (typeof message === 'string' && message) return message;
+  if (error?.code === 'ECONNABORTED') return 'The request timed out. Please check your connection and try again.';
+  return fallback;
+};
 
 // Type-safe API response unwrapper
 export const api = {
@@ -92,6 +107,7 @@ export const api = {
     apiClient
       .post<{ data: T }>(url, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // large files on slow connections exceed the 30s default
       })
       .then((r) => r.data.data),
 };

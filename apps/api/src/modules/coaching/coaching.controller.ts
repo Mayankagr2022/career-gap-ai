@@ -3,15 +3,15 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CoachingService } from './coaching.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { IsString, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNotEmpty, MaxLength } from 'class-validator';
 
 class StartSessionDto {
-  @IsString() message: string;
+  @IsString() @IsNotEmpty() @MaxLength(4000) message: string;
   @IsOptional() @IsUUID() analysisId?: string;
 }
 
 class ContinueSessionDto {
-  @IsString() message: string;
+  @IsString() @IsNotEmpty() @MaxLength(4000) message: string;
 }
 
 @ApiTags('coaching')
@@ -53,7 +53,7 @@ export class CoachingController {
   @ApiOperation({ summary: 'Generate interview questions for a job' })
   getInterviewQuestions(
     @CurrentUser('id') userId: string,
-    @Query('jobId') jobId: string,
+    @Query('jobId', ParseUUIDPipe) jobId: string,
   ) {
     return this.service.getInterviewQuestions(userId, jobId);
   }

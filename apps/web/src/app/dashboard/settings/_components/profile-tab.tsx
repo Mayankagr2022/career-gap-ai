@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { User, Loader2, Save, Mail, BadgeCheck, Camera } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
 
@@ -43,7 +43,7 @@ export function ProfileTab() {
     },
     onError: (error: any) => {
       setPreviewAvatar(null);
-      toast.error(error.response?.data?.message || 'Failed to upload profile picture');
+      toast.error(getErrorMessage(error, 'Failed to upload profile picture'));
     }
   });
 

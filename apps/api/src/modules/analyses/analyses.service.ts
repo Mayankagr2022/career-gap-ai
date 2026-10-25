@@ -7,7 +7,33 @@ import {
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { AnalysisStatus, ResumeStatus } from '@prisma/client';
+import { AnalysisStatus, Prisma, ResumeStatus } from '@prisma/client';
+import { toRoadmapDto } from '../roadmaps/roadmaps.service';
+
+const gapsInclude = {
+  skillGaps: { orderBy: { requiredLevel: 'desc' } },
+  atsSuggestions: true,
+} satisfies Prisma.AnalysisInclude;
+
+/** Map relational gap/suggestion rows back to the arrays the API has always returned. */
+function withGapArrays<T extends { skillGaps: any[]; atsSuggestions: any[] }>(analysis: T) {
+  return {
+    ...analysis,
+    skillGaps: analysis.skillGaps.map((g) => ({
+      skill: g.skillName,
+      importance: g.importance,
+      currentLevel: g.currentLevel,
+      requiredLevel: g.requiredLevel,
+      category: g.category,
+    })),
+    atsSuggestions: analysis.atsSuggestions.map((s) => ({
+      type: s.type,
+      message: s.message,
+      severity: s.severity,
+      suggestion: s.suggestion,
+    })),
+  };
+}
 
 @Injectable()
 export class AnalysesService {
@@ -27,7 +53,7 @@ export class AnalysesService {
 
     // Validate job belongs to user
     const job = await this.prisma.job.findUnique({ where: { id: jobId } });
-    if (!job) throw new NotFoundException('Job not found');
+    if (!job || !job.isActive) throw new NotFoundException('Job not found');
     if (job.userId !== userId) throw new ForbiddenException('Access denied to job');
 
     // Create analysis record
@@ -51,31 +77,47 @@ export class AnalysesService {
   }
 
   async findAll(userId: string) {
-    return this.prisma.analysis.findMany({
+    const analyses = await this.prisma.analysis.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
+        ...gapsInclude,
         resume: { select: { id: true, originalName: true, status: true } },
         job: { select: { id: true, title: true, company: true } },
       },
     });
+    return analyses.map(withGapArrays);
   }
 
   async findOne(id: string, userId: string) {
     const analysis = await this.prisma.analysis.findUnique({
       where: { id },
       include: {
+        ...gapsInclude,
         resume: { select: { id: true, originalName: true, parsedData: true } },
-        job: true,
+        job: { include: { skills: { include: { skill: { select: { name: true } } } } } },
         aiRecommendations: { orderBy: { priority: 'asc' } },
-        roadmaps: true,
+        roadmaps: {
+          include: {
+            milestones: { orderBy: { position: 'asc' }, include: { tasks: { orderBy: { position: 'asc' } } } },
+          },
+        },
       },
     });
 
     if (!analysis) throw new NotFoundException('Analysis not found');
     if (analysis.userId !== userId) throw new ForbiddenException('Access denied');
 
-    return analysis;
+    const { job, roadmaps, ...rest } = withGapArrays(analysis);
+    return {
+      ...rest,
+      job: {
+        ...job,
+        requiredSkills: job.skills.filter((s) => s.importance === 'REQUIRED').map((s) => s.skill.name),
+        preferredSkills: job.skills.filter((s) => s.importance === 'PREFERRED').map((s) => s.skill.name),
+      },
+      roadmaps: roadmaps.map(toRoadmapDto),
+    };
   }
 
   async delete(id: string, userId: string) {
@@ -85,13 +127,15 @@ export class AnalysesService {
   }
 
   async getLatestForDashboard(userId: string) {
-    return this.prisma.analysis.findFirst({
+    const analysis = await this.prisma.analysis.findFirst({
       where: { userId, status: AnalysisStatus.COMPLETED },
       orderBy: { createdAt: 'desc' },
       include: {
+        ...gapsInclude,
         resume: { select: { originalName: true } },
         job: { select: { title: true, company: true } },
       },
     });
+    return analysis ? withGapArrays(analysis) : null;
   }
 }

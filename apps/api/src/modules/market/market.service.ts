@@ -1,6 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, SkillTrend } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
+import { skillSlug } from '../skills/skills.service';
+
+const statInclude = {
+  skill: {
+    select: {
+      name: true,
+      relatedTo: { select: { related: { select: { name: true } } } },
+    },
+  },
+} satisfies Prisma.SkillMarketStatInclude;
+
+type StatWithSkill = Prisma.SkillMarketStatGetPayload<{ include: typeof statInclude }>;
+
+/** Flat shape the API has always returned: { skill, demandScore, trend, relatedSkills, ... } */
+function toMarketDto(stat: StatWithSkill) {
+  const { skill, skillId, source, ...rest } = stat;
+  return {
+    ...rest,
+    skill: skill.name,
+    relatedSkills: skill.relatedTo.map((r) => r.related.name),
+  };
+}
 
 @Injectable()
 export class MarketService {
@@ -9,47 +32,44 @@ export class MarketService {
     private readonly ai: AiService,
   ) {}
 
-  async getSkillDemand(skills?: string[], limit: number = 20) {
-    const where = skills?.length
-      ? { skill: { in: skills } }
-      : {};
+  private async query(args: Prisma.SkillMarketStatFindManyArgs) {
+    const stats = await this.prisma.skillMarketStat.findMany({ ...args, include: statInclude });
+    return stats.map((s) => toMarketDto(s as StatWithSkill));
+  }
 
-    return this.prisma.skillMarketData.findMany({
-      where,
+  async getSkillDemand(skills?: string[], limit: number = 20) {
+    const slugs = (skills ?? []).map(skillSlug).filter(Boolean);
+    return this.query({
+      where: slugs.length ? { skill: { slug: { in: slugs } } } : {},
       orderBy: { demandScore: 'desc' },
       take: limit,
     });
   }
 
   async searchSkill(skill: string) {
-    return this.prisma.skillMarketData.findMany({
-      where: { skill: { contains: skill, mode: 'insensitive' } },
+    return this.query({
+      where: { skill: { name: { contains: skill, mode: 'insensitive' } } },
       orderBy: { demandScore: 'desc' },
       take: 20,
     });
   }
 
   async getTrendingSkills(limit: number = 10) {
-    return this.prisma.skillMarketData.findMany({
-      where: { trend: 'RISING' },
+    return this.query({
+      where: { trend: SkillTrend.RISING },
       orderBy: { demandScore: 'desc' },
       take: limit,
     });
   }
 
-  async getSkillsForResume(resumeId: string) {
-    const resume = await this.prisma.resume.findUnique({
-      where: { id: resumeId },
-      select: { parsedData: true },
-    });
+  /** Market stats for the skills found on a resume (via the resume_skills join). */
+  async getSkillsForResume(resumeId: string, userId: string) {
+    const resume = await this.prisma.resume.findUnique({ where: { id: resumeId }, select: { userId: true } });
+    if (!resume) throw new NotFoundException('Resume not found');
+    if (resume.userId !== userId) throw new ForbiddenException('Access denied');
 
-    if (!resume?.parsedData) return [];
-
-    const parsed = resume.parsedData as any;
-    const skills: string[] = parsed.skills || [];
-
-    return this.prisma.skillMarketData.findMany({
-      where: { skill: { in: skills } },
+    return this.query({
+      where: { skill: { resumeSkills: { some: { resumeId } } } },
       orderBy: { demandScore: 'desc' },
     });
   }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, apiClient } from '@/lib/api-client';
+import { api, apiClient, getErrorMessage } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth.store';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,7 @@ export function useRegister() {
       }
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message?.[0] || 'Registration failed');
+      toast.error(getErrorMessage(error, 'Registration failed'));
     },
   });
 }
@@ -50,7 +50,7 @@ export function useLogin() {
       }
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message?.[0] || 'Invalid email or password');
+      toast.error(getErrorMessage(error, 'Invalid email or password'));
     },
   });
 }
@@ -95,7 +95,7 @@ export function useForgotPassword() {
       toast.success(data.message || 'If an account exists, a reset link has been sent.');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || error.response?.data?.message?.[0] || 'Failed to send reset link');
+      toast.error(getErrorMessage(error, 'Failed to send reset link'));
     },
   });
 }
@@ -111,7 +111,7 @@ export function useResetPassword() {
       router.push('/auth/login');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || error.response?.data?.message?.[0] || 'Failed to reset password');
+      toast.error(getErrorMessage(error, 'Failed to reset password'));
     },
   });
 }

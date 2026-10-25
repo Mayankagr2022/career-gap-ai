@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
+import { PrismaService } from '../../common/prisma/prisma.service';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -15,7 +16,10 @@ export class AiService {
   private readonly temperature: number;
   readonly logger = new Logger(AiService.name);
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     this.genai = new GoogleGenAI({
       apiKey: config.get('openai.apiKey'), // reuse the api key
     });
@@ -46,11 +50,27 @@ export class AiService {
     return { systemInstruction, conversation, lastMessage };
   }
 
+  /** True when the provider says the quota is exhausted for a long window (e.g. free-tier daily cap), so retrying is pointless. */
+  private isQuotaExhausted(error: any): boolean {
+    const msg = String(error?.message ?? '');
+    const status = error?.status || error?.response?.status || (msg.includes('"code":429') ? 429 : undefined);
+    if (status !== 429) return false;
+    const delay = msg.match(/"retryDelay":"(\d+(?:\.\d+)?)s"/);
+    return /PerDay|per day|RESOURCE_EXHAUSTED/i.test(msg) && (!delay || Number(delay[1]) > 60);
+  }
+
   private async withRetry<T>(operation: () => Promise<T>, maxRetries = 3): Promise<T> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
       } catch (error: any) {
+        if (this.isQuotaExhausted(error)) {
+          this.logger.error('AI provider quota exhausted; not retrying');
+          throw new HttpException(
+            'The AI service has reached its usage limit. Please try again later.',
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
         const status = error?.status || error?.response?.status;
         const isRetryable = status === 503 || status === 429 || error?.message?.includes('503') || error?.message?.includes('429') || error?.message?.includes('JSON');
         
@@ -77,9 +97,37 @@ export class AiService {
     },
   ): Promise<string> {
     const { systemInstruction, conversation, lastMessage } = this.prepareGeminiPayload(messages);
+    const model = options?.model || this.model;
+    const startedAt = Date.now();
 
-    const response = await this.genai.models.generateContent({
-      model: options?.model || this.model,
+    let response;
+    try {
+      response = await this.generate(model, conversation, lastMessage, systemInstruction, options);
+    } catch (error: any) {
+      this.recordUsage({ model, latencyMs: Date.now() - startedAt, success: false, error: error?.message });
+      throw error;
+    }
+
+    this.recordUsage({
+      model,
+      latencyMs: Date.now() - startedAt,
+      success: true,
+      inputTokens: response.usageMetadata?.promptTokenCount,
+      outputTokens: response.usageMetadata?.candidatesTokenCount,
+    });
+
+    return response.text || '';
+  }
+
+  private generate(
+    model: string,
+    conversation: any[],
+    lastMessage: any,
+    systemInstruction: string,
+    options?: { maxTokens?: number; temperature?: number; responseFormat?: 'json' | 'text' },
+  ) {
+    return this.genai.models.generateContent({
+      model,
       contents: [
         ...conversation,
         lastMessage
@@ -94,8 +142,20 @@ export class AiService {
         responseMimeType: options?.responseFormat === 'json' ? 'application/json' : 'text/plain',
       },
     });
+  }
 
-    return response.text || '';
+  /** Fire-and-forget: usage logging must never slow down or fail an AI call. */
+  private recordUsage(entry: {
+    model: string;
+    latencyMs: number;
+    success: boolean;
+    inputTokens?: number;
+    outputTokens?: number;
+    error?: string;
+  }) {
+    this.prisma.aiUsageLog
+      .create({ data: { ...entry, error: entry.error?.slice(0, 500) } })
+      .catch((err) => this.logger.warn(`AI usage log failed: ${err.message}`));
   }
 
   async chat(

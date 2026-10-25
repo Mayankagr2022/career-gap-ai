@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 export function useRecommendations(analysisId?: string) {
@@ -24,6 +24,9 @@ export function useMarkRecommendationComplete() {
 
   return useMutation({
     mutationFn: (id: string) => api.patch(`/recommendations/${id}/complete`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to update recommendation'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['recommendation-stats'] });
@@ -37,6 +40,9 @@ export function useMarkRecommendationIncomplete() {
 
   return useMutation({
     mutationFn: (id: string) => api.patch(`/recommendations/${id}/incomplete`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to update recommendation'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recommendations'] });
       queryClient.invalidateQueries({ queryKey: ['recommendation-stats'] });

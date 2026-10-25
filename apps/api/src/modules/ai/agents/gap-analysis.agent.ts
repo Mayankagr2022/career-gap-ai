@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AiService } from '../ai.service';
 import { ParsedResume, SkillGap, SkillImportance, SkillCategory, AtsSuggestion, AtsIssueType, IssueSeverity } from '@career-gap-ai/shared';
 import { ParsedJob } from './job-parser.agent';
+import { asArray, asNumber, asString, asStringArray } from './ai-output.util';
 
 export interface GapAnalysisResult {
   matchScore: number;
@@ -85,9 +86,19 @@ Return ONLY valid JSON:
       { temperature: 0.2, maxTokens: 6000 },
     );
 
-    // Clamp scores
-    result.matchScore = Math.max(0, Math.min(100, Math.round(result.matchScore)));
-    result.atsScore = Math.max(0, Math.min(100, Math.round(result.atsScore)));
+    // Normalise: the model may omit or mistype fields; never let that crash the pipeline
+    result.matchScore = Math.max(0, Math.min(100, Math.round(asNumber(result.matchScore))));
+    result.atsScore = Math.max(0, Math.min(100, Math.round(asNumber(result.atsScore))));
+    result.skillGaps = asArray<any>(result.skillGaps)
+      .filter((g) => g && typeof g.skill === 'string' && g.skill.trim())
+      .map((g) => ({ ...g, skill: g.skill.trim(), currentLevel: asNumber(g.currentLevel), requiredLevel: asNumber(g.requiredLevel) }));
+    result.atsSuggestions = asArray<any>(result.atsSuggestions)
+      .filter((s) => s && (s.message || s.suggestion))
+      .map((s) => ({ ...s, message: asString(s.message, 'See suggestion'), suggestion: asString(s.suggestion, asString(s.message)) }));
+    result.strengths = asStringArray(result.strengths);
+    result.weaknesses = asStringArray(result.weaknesses);
+    result.recommendations = asStringArray(result.recommendations);
+    result.executiveSummary = asString(result.executiveSummary);
 
     this.logger.log(
       `Analysis complete: match=${result.matchScore}%, ATS=${result.atsScore}%, fit=${result.fitAssessment}`,

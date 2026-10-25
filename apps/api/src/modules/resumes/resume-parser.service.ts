@@ -9,10 +9,7 @@ export class ResumeParserService {
   async extractText(buffer: Buffer, mimeType: string): Promise<string> {
     if (mimeType === 'application/pdf') {
       return this.extractFromPdf(buffer);
-    } else if (
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mimeType === 'application/msword'
-    ) {
+    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       return this.extractFromDocx(buffer);
     } else {
       throw new BadRequestException(`Unsupported file type: ${mimeType}`);

@@ -9,12 +9,17 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { AuthProvider, User } from '@prisma/client';
+import { AuthProvider, AuthTokenType, User } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
 import { MailerService } from '@nestjs-modules/mailer';
+import { AuditService } from '../../common/audit/audit.service';
+
+// Refresh and reset tokens are stored hashed so a DB leak can't be replayed
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 @Injectable()
 export class AuthService {
@@ -27,11 +32,13 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
     private readonly mailerService: MailerService,
+    private readonly audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthTokensDto> {
+    const email = normalizeEmail(dto.email);
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email },
     });
 
     if (existingUser) {
@@ -42,7 +49,7 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email,
+        email,
         name: dto.name,
         password: hashedPassword,
         provider: AuthProvider.LOCAL,
@@ -51,12 +58,13 @@ export class AuthService {
     });
 
     this.logger.log(`New user registered: ${user.email}`);
+    await this.audit.log({ userId: user.id, action: 'auth.register', entity: 'user', entityId: user.id });
     return this.generateTokens(user);
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
     const user = await this.prisma.user.findUnique({
-      where: { email, isActive: true },
+      where: { email: normalizeEmail(email), isActive: true },
     });
 
     if (!user || !user.password) {
@@ -76,6 +84,7 @@ export class AuthService {
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
+    await this.audit.log({ userId: user.id, action: 'auth.login', entity: 'user', entityId: user.id });
 
     return this.generateTokens(user);
   }
@@ -84,7 +93,7 @@ export class AuthService {
     const session = await this.prisma.userSession.findFirst({
       where: {
         userId,
-        refreshToken,
+        refreshTokenHash: sha256(refreshToken),
         expiresAt: { gt: new Date() },
       },
       include: { user: true },
@@ -103,7 +112,7 @@ export class AuthService {
   async logout(userId: string, refreshToken?: string): Promise<void> {
     if (refreshToken) {
       await this.prisma.userSession.deleteMany({
-        where: { userId, refreshToken },
+        where: { userId, refreshTokenHash: sha256(refreshToken) },
       });
     } else {
       // Logout from all devices
@@ -111,7 +120,8 @@ export class AuthService {
     }
   }
 
-  async forgotPassword(email: string): Promise<void> {
+  async forgotPassword(rawEmail: string): Promise<void> {
+    const email = normalizeEmail(rawEmail);
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.isActive) {
       // Don't leak whether the email exists or not
@@ -122,11 +132,16 @@ export class AuthService {
     const resetExpiry = new Date();
     resetExpiry.setMinutes(resetExpiry.getMinutes() + 15);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
+    // Invalidate outstanding reset tokens, then store only the hash of the new one
+    await this.prisma.authToken.deleteMany({
+      where: { userId: user.id, type: AuthTokenType.PASSWORD_RESET, usedAt: null },
+    });
+    await this.prisma.authToken.create({
       data: {
-        passwordResetToken: resetToken,
-        passwordResetExpiry: resetExpiry,
+        userId: user.id,
+        type: AuthTokenType.PASSWORD_RESET,
+        tokenHash: sha256(resetToken),
+        expiresAt: resetExpiry,
       },
     });
 
@@ -147,35 +162,51 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    const user = await this.prisma.user.findFirst({
+    const authToken = await this.prisma.authToken.findFirst({
       where: {
-        passwordResetToken: token,
-        passwordResetExpiry: { gt: new Date() },
-        isActive: true,
+        tokenHash: sha256(token),
+        type: AuthTokenType.PASSWORD_RESET,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+        user: { isActive: true },
       },
+      include: { user: true },
     });
 
-    if (!user) {
+    if (!authToken) {
       throw new BadRequestException('Invalid or expired password reset token');
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, this.SALT_ROUNDS);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        passwordResetToken: null,
-        passwordResetExpiry: null,
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: authToken.userId },
+        data: { password: hashedPassword },
+      }),
+      this.prisma.authToken.update({
+        where: { id: authToken.id },
+        data: { usedAt: new Date() },
+      }),
+      // A password reset signs the user out everywhere
+      this.prisma.userSession.deleteMany({ where: { userId: authToken.userId } }),
+    ]);
 
-    this.logger.log(`Password reset successful for user: ${user.email}`);
+    await this.audit.log({
+      userId: authToken.userId,
+      action: 'auth.password_reset',
+      entity: 'user',
+      entityId: authToken.userId,
+    });
+    this.logger.log(`Password reset successful for user: ${authToken.user.email}`);
   }
 
   async googleLogin(profile: any): Promise<AuthTokensDto> {
     const { id, emails, displayName, photos } = profile;
-    const email = emails[0].value;
+    const email = emails?.[0]?.value ? normalizeEmail(emails[0].value) : undefined;
+    if (!email) {
+      throw new BadRequestException('Google account must have an email address');
+    }
 
     return this.handleOAuthLogin({
       email,
@@ -188,7 +219,7 @@ export class AuthService {
 
   async linkedInLogin(profile: any): Promise<AuthTokensDto> {
     const { id, emails, displayName, photos } = profile;
-    const email = emails?.[0]?.value;
+    const email = emails?.[0]?.value ? normalizeEmail(emails[0].value) : undefined;
 
     if (!email) {
       throw new BadRequestException('LinkedIn account must have an email address');
@@ -212,11 +243,17 @@ export class AuthService {
   }): Promise<AuthTokensDto> {
     const { email, name, avatar, provider, providerId } = params;
 
-    let user = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { provider, providerId }],
-      },
+    // 1. Known social account -> its user
+    const linked = await this.prisma.oAuthAccount.findUnique({
+      where: { provider_providerId: { provider, providerId } },
+      include: { user: true },
     });
+    let user: User | null = linked?.user ?? null;
+
+    // 2. Otherwise match by email and link this provider to the existing account
+    if (!user) {
+      user = await this.prisma.user.findUnique({ where: { email } });
+    }
 
     if (!user) {
       user = await this.prisma.user.create({
@@ -225,21 +262,28 @@ export class AuthService {
           name,
           avatar,
           provider,
-          providerId,
           isEmailVerified: true,
+          oauthAccounts: { create: { provider, providerId } },
         },
       });
-    } else if (user.provider !== provider) {
+    } else if (!linked) {
+      await this.prisma.oAuthAccount.create({ data: { userId: user.id, provider, providerId } });
       user = await this.prisma.user.update({
         where: { id: user.id },
-        data: {
-          provider,
-          providerId,
-          isEmailVerified: true,
-          avatar: user.avatar || avatar,
-        },
+        data: { isEmailVerified: true, avatar: user.avatar || avatar },
       });
     }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: `auth.login.${provider.toLowerCase()}`,
+      entity: 'user',
+      entityId: user.id,
+    });
 
     return this.generateTokens(user);
   }
@@ -255,6 +299,8 @@ export class AuthService {
       this.jwtService.signAsync(payload, {
         secret: this.config.get('jwt.refreshSecret'),
         expiresIn: this.config.get('jwt.refreshExpiresIn', '30d'),
+        // Unique id: two sessions minted in the same second must not collide on the unique token hash
+        jwtid: crypto.randomUUID(),
       }),
     ]);
 
@@ -270,7 +316,7 @@ export class AuthService {
     await this.prisma.userSession.create({
       data: {
         userId: user.id,
-        refreshToken,
+        refreshTokenHash: sha256(refreshToken),
         expiresAt,
       },
     });

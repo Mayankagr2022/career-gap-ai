@@ -5,7 +5,24 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { GapAnalysisAgent } from '../ai/agents/gap-analysis.agent';
 import { RecommendationAgent } from '../ai/agents/recommendation.agent';
 import { RoadmapAgent } from '../ai/agents/roadmap.agent';
-import { AnalysisStatus, RecommendationType, DifficultyLevel, NotificationType } from '@prisma/client';
+import {
+  AnalysisStatus,
+  AtsIssueType,
+  DifficultyLevel,
+  FitAssessment,
+  GapImportance,
+  IssueSeverity,
+  JobSkillImportance,
+  NotificationType,
+  RecommendationType,
+  SkillCategory,
+} from '@prisma/client';
+import { SkillsService, skillSlug } from '../skills/skills.service';
+import { publicErrorMessage } from '../../common/utils/public-error';
+
+/** Coerce AI output to a valid enum value, falling back instead of failing the whole analysis. */
+const asEnum = <T extends string>(values: Record<string, T>, value: unknown, fallback: T): T =>
+  Object.values(values).includes(value as T) ? (value as T) : fallback;
 
 @Processor('analysis-processing')
 export class AnalysisProcessor {
@@ -16,6 +33,7 @@ export class AnalysisProcessor {
     private readonly gapAnalysisAgent: GapAnalysisAgent,
     private readonly recommendationAgent: RecommendationAgent,
     private readonly roadmapAgent: RoadmapAgent,
+    private readonly skillsService: SkillsService,
   ) {}
 
   @Process('process-analysis')
@@ -37,7 +55,7 @@ export class AnalysisProcessor {
         where: { id: analysisId },
         include: {
           resume: { select: { parsedData: true, rawText: true } },
-          job: true,
+          job: { include: { skills: { include: { skill: { select: { name: true } } } } } },
         },
       });
 
@@ -47,6 +65,12 @@ export class AnalysisProcessor {
 
       const parsedResume = analysis.resume.parsedData as any;
       const job_data = analysis.job;
+      const requiredSkills = job_data.skills
+        .filter((s) => s.importance === JobSkillImportance.REQUIRED)
+        .map((s) => s.skill.name);
+      const preferredSkills = job_data.skills
+        .filter((s) => s.importance === JobSkillImportance.PREFERRED)
+        .map((s) => s.skill.name);
 
       // Reconstruct ParsedJob from stored job data
       const parsedJob = {
@@ -54,15 +78,15 @@ export class AnalysisProcessor {
         company: job_data.company,
         location: job_data.location || undefined,
         remote: job_data.remote,
-        requiredSkills: job_data.requiredSkills,
-        preferredSkills: job_data.preferredSkills,
+        requiredSkills,
+        preferredSkills,
         responsibilities: [],
         qualifications: [],
         experienceLevel: job_data.experienceLevel || undefined,
         education: job_data.education || undefined,
         jobType: job_data.jobType || undefined,
         industry: job_data.industry || undefined,
-        keyKeywords: [...job_data.requiredSkills, ...job_data.preferredSkills],
+        keyKeywords: [...requiredSkills, ...preferredSkills],
       } as any;
 
       // 3. Run gap analysis
@@ -89,6 +113,9 @@ export class AnalysisProcessor {
 
       const processingTime = Date.now() - startTime;
 
+      // Link AI-reported gap skills to the catalog
+      const catalog = await this.skillsService.resolveMany((gapResult.skillGaps ?? []).map((g) => g.skill));
+
       // 6. Save all results in a transaction
       await this.prisma.$transaction(async (tx) => {
         // Update analysis
@@ -98,14 +125,41 @@ export class AnalysisProcessor {
             status: AnalysisStatus.COMPLETED,
             matchScore: gapResult.matchScore,
             atsScore: gapResult.atsScore,
-            skillGaps: gapResult.skillGaps as any,
-            strengths: gapResult.strengths,
-            weaknesses: gapResult.weaknesses,
-            recommendations: gapResult.recommendations,
-            atsSuggestions: gapResult.atsSuggestions as any,
+            fitAssessment: asEnum(FitAssessment, gapResult.fitAssessment, FitAssessment.FAIR),
+            executiveSummary: gapResult.executiveSummary,
+            strengths: gapResult.strengths ?? [],
+            weaknesses: gapResult.weaknesses ?? [],
+            recommendations: gapResult.recommendations ?? [],
+            errorMessage: null,
             rawAnalysis: { ...gapResult, executiveSummary: gapResult.executiveSummary } as any,
             processingTime,
           },
+        });
+
+        // Re-runs must not duplicate child rows
+        await tx.analysisSkillGap.deleteMany({ where: { analysisId } });
+        await tx.analysisAtsSuggestion.deleteMany({ where: { analysisId } });
+
+        await tx.analysisSkillGap.createMany({
+          data: (gapResult.skillGaps ?? []).map((g) => ({
+            analysisId,
+            skillId: catalog.get(skillSlug(g.skill))?.id,
+            skillName: g.skill,
+            importance: asEnum(GapImportance, g.importance, GapImportance.IMPORTANT),
+            category: asEnum(SkillCategory, g.category, SkillCategory.TECHNICAL),
+            currentLevel: Math.round(g.currentLevel ?? 0),
+            requiredLevel: Math.round(g.requiredLevel ?? 0),
+          })),
+        });
+
+        await tx.analysisAtsSuggestion.createMany({
+          data: (gapResult.atsSuggestions ?? []).map((s) => ({
+            analysisId,
+            type: asEnum(AtsIssueType, s.type, AtsIssueType.FORMAT_ISSUE),
+            severity: asEnum(IssueSeverity, s.severity, IssueSeverity.MEDIUM),
+            message: s.message,
+            suggestion: s.suggestion,
+          })),
         });
 
         // Save recommendations
@@ -113,16 +167,16 @@ export class AnalysisProcessor {
           data: recommendations.map((r, index) => ({
             userId: analysis.userId,
             analysisId,
-            type: r.type as RecommendationType,
-            title: r.title,
+            type: asEnum(RecommendationType, r.type, RecommendationType.COURSE),
+            title: String(r.title).slice(0, 300),
             description: r.description,
-            url: r.url,
-            duration: r.duration,
-            difficulty: (r.difficulty || 'INTERMEDIATE') as DifficultyLevel,
-            priority: r.priority || index,
-            skills: r.skills,
-            provider: r.provider,
-            cost: r.cost,
+            url: typeof r.url === 'string' && /^https?:\/\//.test(r.url) ? r.url : null,
+            duration: r.duration || null,
+            difficulty: asEnum(DifficultyLevel, r.difficulty, DifficultyLevel.INTERMEDIATE),
+            priority: Number.isFinite(Number(r.priority)) ? Number(r.priority) : index,
+            skills: Array.isArray(r.skills) ? r.skills.map(String) : [],
+            provider: r.provider ?? null,
+            cost: r.cost ?? null,
           })),
         });
 
@@ -133,7 +187,23 @@ export class AnalysisProcessor {
             analysisId,
             title: roadmap.title,
             targetRole: roadmap.targetRole,
-            milestones: roadmap.milestones as any,
+            milestones: {
+              create: roadmap.milestones.map((m, mi) => ({
+                title: m.title,
+                description: m.description,
+                weekNumber: m.week ?? mi + 1,
+                position: mi,
+                tasks: {
+                  create: (m.tasks ?? []).map((t, ti) => ({
+                    title: t.title,
+                    description: t.description,
+                    type: asEnum(RecommendationType, t.type, RecommendationType.COURSE),
+                    url: t.url,
+                    position: ti,
+                  })),
+                },
+              })),
+            },
           },
         });
 
@@ -150,8 +220,15 @@ export class AnalysisProcessor {
       });
 
       this.logger.log(`Analysis ${analysisId} completed in ${processingTime}ms`);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Analysis ${analysisId} failed: ${error.message}`);
+
+      // Only the final attempt marks the analysis FAILED and notifies the user;
+      // earlier attempts just let the queue retry (no status flicker, no duplicate notifications).
+      if (job.attemptsMade + 1 < (job.opts.attempts ?? 1)) {
+        this.logger.warn(`Analysis ${analysisId}: attempt ${job.attemptsMade + 1}/${job.opts.attempts} failed, will retry`);
+        throw error;
+      }
 
       // Create failure notification
       const analysis = await this.prisma.analysis.findUnique({
@@ -172,7 +249,7 @@ export class AnalysisProcessor {
 
       await this.prisma.analysis.update({
         where: { id: analysisId },
-        data: { status: AnalysisStatus.FAILED },
+        data: { status: AnalysisStatus.FAILED, errorMessage: publicErrorMessage(error) },
       });
 
       throw error;

@@ -32,6 +32,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = resp.message || exception.message;
         error = resp.error || exception.name;
       }
+      if (status === HttpStatus.TOO_MANY_REQUESTS) {
+        message = 'Too many requests. Please wait a moment and try again.';
+        error = 'TOO_MANY_REQUESTS';
+      }
+    } else if (
+      exception &&
+      typeof exception === 'object' &&
+      [(exception as any).status, (exception as any).statusCode].some((s) => Number.isInteger(s) && s >= 400 && s < 500)
+    ) {
+      // Errors from Express middleware (e.g. body-parser: 413 payload too large, 400 bad JSON)
+      status = (exception as any).status ?? (exception as any).statusCode;
+      message = status === 413 ? 'Request body is too large' : status === 400 ? 'Malformed request' : 'Request error';
+      error = status === 413 ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST';
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       // Handle Prisma-specific errors
       switch (exception.code) {

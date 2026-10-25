@@ -86,7 +86,9 @@ export default function AnalysisDetailPage({ params }: { params: Promise<{ id: s
         <div className="glass-card flex flex-col items-center py-12 text-center">
           <AlertCircle className="mb-4 h-12 w-12 text-red-400" />
           <h2 className="font-semibold">Analysis Failed</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Something went wrong. Please try creating a new analysis.</p>
+          <p className="mt-1 max-w-md break-words text-sm text-muted-foreground">
+            {analysis.errorMessage || 'Something went wrong. Please try creating a new analysis.'}
+          </p>
         </div>
       )}
 

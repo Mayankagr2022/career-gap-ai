@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bull';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -23,6 +24,8 @@ import { openaiConfig } from './config/openai.config';
 import { awsConfig } from './config/aws.config';
 import { oauthConfig } from './config/oauth.config';
 import { emailConfig } from './config/email.config';
+import { AuditModule } from './common/audit/audit.module';
+import { SkillsModule } from './modules/skills/skills.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
@@ -40,8 +43,9 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
-          ttl: config.get('THROTTLE_TTL', 60000),
-          limit: config.get('THROTTLE_LIMIT', 100),
+          // env values are strings; the throttler needs numbers
+          ttl: Number(config.get('THROTTLE_TTL', 60000)),
+          limit: Number(config.get('THROTTLE_LIMIT', 100)),
         },
       ],
     }),
@@ -89,6 +93,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 
     // Core modules
     PrismaModule,
+    AuditModule,
+    SkillsModule,
     StorageModule,
     AiModule,
 
@@ -103,6 +109,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     CoachingModule,
     MarketModule,
     NotificationsModule,
+  ],
+  providers: [
+    // Without this guard the ThrottlerModule config above is never enforced
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

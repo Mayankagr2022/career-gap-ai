@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AiService } from '../ai.service';
+import { asNumber, asString, asStringArray } from './ai-output.util';
 import { ParsedResume } from '@career-gap-ai/shared';
 import { GapAnalysisResult } from './gap-analysis.agent';
 import { ParsedJob } from './job-parser.agent';
@@ -31,7 +32,7 @@ export class RecommendationAgent {
   ): Promise<RecommendationItem[]> {
     this.logger.log(`Generating recommendations for ${resume.name}`);
 
-    const criticalGaps = gaps.skillGaps
+    const criticalGaps = (gaps.skillGaps ?? [])
       .filter((g) => g.importance === 'CRITICAL' || g.importance === 'IMPORTANT')
       .map((g) => g.skill)
       .join(', ');
@@ -69,7 +70,16 @@ Return ONLY valid JSON array:
       { temperature: 0.4 },
     );
 
-    const recommendations = Array.isArray(result) ? result : [];
+    const recommendations: RecommendationItem[] = (Array.isArray(result) ? result : [])
+      .filter((r: any) => r && asString(r.title))
+      .map((r: any, i: number) => ({
+        ...r,
+        title: asString(r.title),
+        description: asString(r.description, 'See the linked resource.'),
+        duration: asString(r.duration),
+        priority: asNumber(r.priority, i + 1),
+        skills: asStringArray(r.skills),
+      }));
     recommendations.sort((a, b) => a.priority - b.priority);
 
     this.logger.log(`Generated ${recommendations.length} recommendations`);

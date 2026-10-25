@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 export interface AdminUser {
@@ -53,7 +53,7 @@ export function useUpdateUserRole() {
       toast.success('User role updated successfully');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update user role');
+      toast.error(getErrorMessage(error, 'Failed to update user role'));
     },
   });
 }
@@ -69,7 +69,7 @@ export function useUpdateUserStatus() {
       toast.success('User status updated successfully');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update user status');
+      toast.error(getErrorMessage(error, 'Failed to update user status'));
     },
   });
 }

@@ -1,22 +1,48 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+
+const milestonesInclude = {
+  milestones: {
+    orderBy: { position: 'asc' },
+    include: { tasks: { orderBy: { position: 'asc' } } },
+  },
+} satisfies Prisma.RoadmapInclude;
+
+type RoadmapWithMilestones = Prisma.RoadmapGetPayload<{ include: typeof milestonesInclude }>;
+
+/** Shape milestones/tasks the way the API has always returned them (week, completed flags). */
+export function toRoadmapDto<T extends RoadmapWithMilestones>(roadmap: T) {
+  return {
+    ...roadmap,
+    milestones: roadmap.milestones.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      week: m.weekNumber,
+      completed: m.tasks.length > 0 && m.tasks.every((t) => t.isCompleted),
+      tasks: m.tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        type: t.type,
+        url: t.url,
+        completed: t.isCompleted,
+      })),
+    })),
+  };
+}
 
 @Injectable()
 export class RoadmapsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId: string) {
-    return this.prisma.roadmap.findMany({
+    const roadmaps = await this.prisma.roadmap.findMany({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        targetRole: true,
-        targetDate: true,
-        completionPct: true,
-        createdAt: true,
-        milestones: true,
+      include: {
+        ...milestonesInclude,
         analysis: {
           select: {
             matchScore: true,
@@ -25,12 +51,14 @@ export class RoadmapsService {
         },
       },
     });
+    return roadmaps.map(toRoadmapDto);
   }
 
   async findOne(id: string, userId: string) {
     const roadmap = await this.prisma.roadmap.findUnique({
       where: { id },
       include: {
+        ...milestonesInclude,
         analysis: {
           include: {
             job: { select: { title: true, company: true } },
@@ -40,10 +68,10 @@ export class RoadmapsService {
       },
     });
 
-    if (!roadmap) throw new NotFoundException('Roadmap not found');
+    if (!roadmap || !roadmap.isActive) throw new NotFoundException('Roadmap not found');
     if (roadmap.userId !== userId) throw new ForbiddenException('Access denied');
 
-    return roadmap;
+    return toRoadmapDto(roadmap);
   }
 
   async updateMilestoneTask(
@@ -53,44 +81,31 @@ export class RoadmapsService {
     taskId: string,
     completed: boolean,
   ) {
-    const roadmap = await this.findOne(roadmapId, userId);
-    const milestones = roadmap.milestones as any[];
+    await this.findOne(roadmapId, userId);
 
-    let totalTasks = 0;
-    let completedTasks = 0;
+    const task = await this.prisma.roadmapTask.findFirst({
+      where: { id: taskId, milestoneId, milestone: { roadmapId } },
+    });
+    if (!task) throw new NotFoundException('Task not found');
 
-    const updatedMilestones = milestones.map((milestone: any) => {
-      if (milestone.id === milestoneId) {
-        const updatedTasks = milestone.tasks.map((task: any) => {
-          totalTasks++;
-          const isTarget = task.id === taskId;
-          const isCompleted = isTarget ? completed : task.completed;
-          if (isCompleted) completedTasks++;
-          return isTarget ? { ...task, completed } : task;
-        });
-
-        const milestoneCompleted = updatedTasks.every((t: any) => t.completed);
-        return { ...milestone, tasks: updatedTasks, completed: milestoneCompleted };
-      }
-
-      // Count other milestones
-      milestone.tasks?.forEach((t: any) => {
-        totalTasks++;
-        if (t.completed) completedTasks++;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.roadmapTask.update({
+        where: { id: taskId },
+        data: { isCompleted: completed, completedAt: completed ? new Date() : null },
       });
 
-      return milestone;
+      const [total, done] = await Promise.all([
+        tx.roadmapTask.count({ where: { milestone: { roadmapId } } }),
+        tx.roadmapTask.count({ where: { milestone: { roadmapId }, isCompleted: true } }),
+      ]);
+
+      await tx.roadmap.update({
+        where: { id: roadmapId },
+        data: { completionPct: total > 0 ? Math.round((done / total) * 100) : 0 },
+      });
     });
 
-    const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-    return this.prisma.roadmap.update({
-      where: { id: roadmapId },
-      data: {
-        milestones: updatedMilestones as any,
-        completionPct,
-      },
-    });
+    return this.findOne(roadmapId, userId);
   }
 
   async delete(id: string, userId: string) {

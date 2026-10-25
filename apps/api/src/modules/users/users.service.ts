@@ -6,12 +6,14 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import * as bcrypt from 'bcryptjs';
 
 import { StorageService } from '../../common/storage/storage.service';
+import { AuditService } from '../../common/audit/audit.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
   async findById(id: string) {
@@ -118,11 +120,19 @@ export class UsersService {
       throw new BadRequestException('You cannot change your own role.');
     }
     
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: targetUserId },
       data: { role },
       select: { id: true, name: true, role: true }
     });
+    await this.audit.log({
+      userId: adminId,
+      action: 'admin.role_change',
+      entity: 'user',
+      entityId: targetUserId,
+      metadata: { role },
+    });
+    return updated;
   }
 
   async updateUserStatus(adminId: string, targetUserId: string, isActive: boolean) {
@@ -130,11 +140,23 @@ export class UsersService {
       throw new BadRequestException('You cannot change your own account status.');
     }
     
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: targetUserId },
       data: { isActive },
       select: { id: true, name: true, isActive: true }
     });
+    if (!isActive) {
+      // A disabled account must not keep working refresh tokens
+      await this.prisma.userSession.deleteMany({ where: { userId: targetUserId } });
+    }
+    await this.audit.log({
+      userId: adminId,
+      action: 'admin.status_change',
+      entity: 'user',
+      entityId: targetUserId,
+      metadata: { isActive },
+    });
+    return updated;
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -200,7 +222,10 @@ export class UsersService {
 
     const isValid = await bcrypt.compare(dto.currentPassword, user.password);
     if (!isValid) {
-      throw new ConflictException('Current password is incorrect');
+      throw new BadRequestException('Current password is incorrect');
+    }
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must be different from the current password');
     }
 
     const newHash = await bcrypt.hash(dto.newPassword, 12);
@@ -218,8 +243,14 @@ export class UsersService {
   async deleteAccount(userId: string) {
     await this.prisma.user.update({
       where: { id: userId },
-      data: { isActive: false, email: `deleted_${Date.now()}_${userId}@deleted.com` },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+        email: `deleted_${Date.now()}_${userId}@deleted.com`,
+      },
     });
+    await this.prisma.oAuthAccount.deleteMany({ where: { userId } });
+    await this.audit.log({ userId, action: 'user.delete_account', entity: 'user', entityId: userId });
     await this.prisma.userSession.deleteMany({ where: { userId } });
     return { message: 'Account deleted successfully' };
   }

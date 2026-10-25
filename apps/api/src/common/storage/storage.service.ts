@@ -32,15 +32,21 @@ export class StorageService {
     file: Express.Multer.File,
     folder: string = 'uploads',
   ): Promise<{ url: string; key: string }> {
-    const extension = file.originalname.split('.').pop();
+    // Only a short alphanumeric extension is kept; the rest of the name never reaches the S3 key
+    const rawExt = file.originalname.includes('.') ? file.originalname.split('.').pop()! : '';
+    const extension = /^[A-Za-z0-9]{1,8}$/.test(rawExt) ? rawExt.toLowerCase() : 'bin';
     const key = `${folder}/${uuidv4()}.${extension}`;
+
+    // Header values must be ASCII, so non-ASCII names go in the RFC 5987 filename* form
+    const asciiName = file.originalname.replace(/[^\x20-\x7e]|["\\]/g, '_');
+    const disposition = `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.originalname)}`;
 
     const params: AWS.S3.PutObjectRequest = {
       Bucket: this.bucket,
       Key: key,
       Body: file.buffer,
       ContentType: file.mimetype,
-      ContentDisposition: `attachment; filename="${file.originalname}"`,
+      ContentDisposition: disposition,
     };
 
     try {

@@ -6,7 +6,8 @@ import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
+  // resolvedTheme is the actual light/dark in effect (theme can be the literal "system")
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -23,7 +24,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   return (
     <button
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
       className={cn(
         "relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors overflow-hidden",
         className
@@ -34,13 +35,13 @@ export function ThemeToggle({ className }: { className?: string }) {
         <Sun 
           className={cn(
             "absolute inset-0 h-4 w-4 transition-all duration-300",
-            theme === 'dark' ? "rotate-90 opacity-0" : "rotate-0 opacity-100"
+            resolvedTheme === 'dark' ? "rotate-90 opacity-0" : "rotate-0 opacity-100"
           )} 
         />
         <Moon 
           className={cn(
             "absolute inset-0 h-4 w-4 transition-all duration-300",
-            theme === 'dark' ? "rotate-0 opacity-100" : "-rotate-90 opacity-0"
+            resolvedTheme === 'dark' ? "rotate-0 opacity-100" : "-rotate-90 opacity-0"
           )} 
         />
       </div>

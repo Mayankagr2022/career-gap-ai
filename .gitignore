@@ -10,5 +10,7 @@ coverage
 .DS_Store
 *.log
 .vercel
-prisma/migrations
 uploads/
+
+# Claude Code personal overrides
+.claude/settings.local.json

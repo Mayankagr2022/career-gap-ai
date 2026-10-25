@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, getErrorMessage } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 export function useRoadmaps() {
@@ -32,6 +32,9 @@ export function useUpdateRoadmapTask() {
       taskId: string;
       completed: boolean;
     }) => api.patch(`/roadmaps/${roadmapId}/task`, { milestoneId, taskId, completed }),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to update task'));
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['roadmaps', variables.roadmapId] });
       queryClient.invalidateQueries({ queryKey: ['roadmaps'] });
@@ -44,6 +47,9 @@ export function useDeleteRoadmap() {
 
   return useMutation({
     mutationFn: (id: string) => api.delete(`/roadmaps/${id}`),
+    onError: (error: any) => {
+      toast.error(getErrorMessage(error, 'Failed to delete roadmap'));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roadmaps'] });
       toast.success('Roadmap deleted');

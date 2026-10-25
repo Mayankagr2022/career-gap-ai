@@ -7,6 +7,8 @@ import { ResumeParserService } from './resume-parser.service';
 import { ResumeParserAgent } from '../ai/agents/resume-parser.agent';
 import { EmbeddingService } from '../ai/embedding.service';
 import { ResumeStatus } from '@prisma/client';
+import { SkillsService } from '../skills/skills.service';
+import { publicErrorMessage } from '../../common/utils/public-error';
 
 @Processor('resume-processing')
 export class ResumeProcessor {
@@ -18,6 +20,7 @@ export class ResumeProcessor {
     private readonly parserService: ResumeParserService,
     private readonly resumeParserAgent: ResumeParserAgent,
     private readonly embeddingService: EmbeddingService,
+    private readonly skillsService: SkillsService,
   ) {}
 
   @Process('process-resume')
@@ -28,15 +31,18 @@ export class ResumeProcessor {
     this.logger.log(`Processing resume: ${resumeId}`);
 
     try {
-      // 1. Update status to PROCESSING
+      // 1. Get resume from DB; if the user deleted it while queued there is nothing to do (and no point retrying)
+      const resume = await this.prisma.resume.findUnique({ where: { id: resumeId } });
+      if (!resume) {
+        this.logger.warn(`Resume ${resumeId} no longer exists, skipping`);
+        return;
+      }
+
+      // 2. Update status to PROCESSING
       await this.prisma.resume.update({
         where: { id: resumeId },
         data: { status: ResumeStatus.PROCESSING },
       });
-
-      // 2. Get resume from DB
-      const resume = await this.prisma.resume.findUnique({ where: { id: resumeId } });
-      if (!resume) throw new Error('Resume not found');
 
       // 3. Download from S3
       const buffer = await this.storage.getFileBuffer(resume.fileKey);
@@ -53,25 +59,40 @@ export class ResumeProcessor {
       // 7. Calculate ATS score (basic heuristic - full analysis happens in analyses module)
       const atsScore = this.calculateBasicAtsScore(parsedData);
 
-      // 8. Update resume with parsed data
-      await this.prisma.resume.update({
-        where: { id: resumeId },
-        data: {
-          status: ResumeStatus.ANALYZED,
-          parsedData: parsedData as any,
-          rawText,
-          atsScore,
-        },
-      });
+      // 8. Update resume with parsed data and link its skills to the catalog
+      const catalog = await this.skillsService.resolveMany(parsedData.skills ?? []);
+      await this.prisma.$transaction([
+        this.prisma.resumeSkill.deleteMany({ where: { resumeId } }),
+        this.prisma.resumeSkill.createMany({
+          data: [...catalog.values()].map((skill) => ({ resumeId, skillId: skill.id })),
+          skipDuplicates: true,
+        }),
+        this.prisma.resume.update({
+          where: { id: resumeId },
+          data: {
+            status: ResumeStatus.ANALYZED,
+            parsedData: parsedData as any,
+            rawText,
+            atsScore,
+            errorMessage: null,
+          },
+        }),
+      ]);
 
       const processingTime = Date.now() - startTime;
       this.logger.log(`Resume ${resumeId} processed in ${processingTime}ms`);
     } catch (error: any) {
       this.logger.error(`Failed to process resume ${resumeId}: ${error.message || String(error)}`, error.stack);
 
-      await this.prisma.resume.update({
+      // Only the final attempt marks the resume FAILED; earlier attempts let the queue retry
+      if (job.attemptsMade + 1 < (job.opts.attempts ?? 1)) {
+        throw error;
+      }
+
+      // updateMany: a resume deleted mid-processing must not turn this into a second failure
+      await this.prisma.resume.updateMany({
         where: { id: resumeId },
-        data: { status: ResumeStatus.FAILED },
+        data: { status: ResumeStatus.FAILED, errorMessage: publicErrorMessage(error) },
       });
 
       throw error;

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AiService } from '../ai.service';
+import { asArray, asNumber, asString, asStringArray } from './ai-output.util';
 import { ParsedResume, SeniorityLevel } from '@career-gap-ai/shared';
 
 @Injectable()
@@ -69,12 +70,27 @@ Return ONLY valid JSON with this exact structure:
       { role: 'user', content: userPrompt },
     ], { temperature: 0.1 });
 
+    // Don't invent a resume from nothing: an empty/garbled AI answer is an error, not data
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      (!asString(result.name) && !asStringArray(result.skills).length && !asArray(result.experience).length)
+    ) {
+      throw new Error('AI returned no usable resume data');
+    }
+
     // Validate and normalize
     result.seniorityLevel = this.normalizeSeniority(
       result.seniorityLevel,
       result.totalYearsExperience,
     );
-    result.skills = [...new Set(result.skills.map((s) => s.trim()))];
+    result.skills = asStringArray(result.skills);
+    result.experience = asArray<any>(result.experience).filter(Boolean);
+    result.education = asArray<any>(result.education).filter(Boolean);
+    result.certifications = asArray<any>(result.certifications).filter(Boolean);
+    result.languages = asStringArray(result.languages);
+    result.totalYearsExperience = Math.max(0, asNumber(result.totalYearsExperience));
+    result.name = asString(result.name);
 
     this.logger.log(`Resume parsed: ${result.name}, ${result.totalYearsExperience}y exp, ${result.skills.length} skills`);
     return result;

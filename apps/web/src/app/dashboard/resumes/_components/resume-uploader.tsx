@@ -1,12 +1,10 @@
 import { useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, FileRejection } from 'react-dropzone';
+import { toast } from 'sonner';
 import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useUploadResume } from '@/hooks/use-resumes';
 
-export function ResumeUploader({ onUpload }: { onUpload: (file: File) => void }) {
-  const { isPending } = useUploadResume();
-
+export function ResumeUploader({ onUpload, isPending }: { onUpload: (file: File) => void; isPending: boolean }) {
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
@@ -16,12 +14,22 @@ export function ResumeUploader({ onUpload }: { onUpload: (file: File) => void })
     [onUpload],
   );
 
+  const onDropRejected = useCallback((rejections: FileRejection[]) => {
+    const code = rejections[0]?.errors[0]?.code;
+    toast.error(
+      code === 'file-too-large' ? 'File is too large. Maximum size is 10MB.'
+        : code === 'file-invalid-type' ? 'Only PDF and DOCX files are allowed.'
+        : code === 'too-many-files' ? 'Please upload one file at a time.'
+        : rejections[0]?.errors[0]?.message || 'This file cannot be uploaded.',
+    );
+  }, []);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc'],
     },
     maxFiles: 1,
     maxSize: 10 * 1024 * 1024,

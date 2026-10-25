@@ -1,6 +1,19 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ChatRole } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CareerCoachAgent, ChatMessage, CoachContext } from '../ai/agents/career-coach.agent';
+
+const toApiRole = (role: ChatRole): 'user' | 'assistant' =>
+  role === ChatRole.USER ? 'user' : 'assistant';
+
+/** One user/assistant exchange; explicit timestamps keep the order stable (now() ties inside a transaction). */
+function turn(userMessage: string, assistantMessage: string) {
+  const now = Date.now();
+  return [
+    { role: ChatRole.USER, content: userMessage, createdAt: new Date(now) },
+    { role: ChatRole.ASSISTANT, content: assistantMessage, createdAt: new Date(now + 1) },
+  ];
+}
 
 @Injectable()
 export class CoachingService {
@@ -10,25 +23,30 @@ export class CoachingService {
   ) {}
 
   async startSession(userId: string, message: string, analysisId?: string) {
-    // Build context from latest analysis if available
+    // Build context from the analysis if one was given (it must belong to the caller)
     let context: CoachContext | undefined;
+    let linkedAnalysisId: string | undefined;
 
     if (analysisId) {
-      const analysis = await this.prisma.analysis.findUnique({
-        where: { id: analysisId },
+      const analysis = await this.prisma.analysis.findFirst({
+        where: { id: analysisId, userId },
         include: {
           resume: { select: { parsedData: true } },
           job: { select: { title: true } },
+          skillGaps: { take: 5, orderBy: { requiredLevel: 'desc' }, select: { skillName: true } },
         },
       });
 
       if (analysis) {
+        linkedAnalysisId = analysis.id;
         const parsed = analysis.resume.parsedData as any;
         context = {
-          resumeSummary: parsed ? `${parsed.name}, ${parsed.totalYearsExperience}y exp, skills: ${parsed.skills?.slice(0, 10).join(', ')}` : undefined,
+          resumeSummary: parsed
+            ? `${parsed.name}, ${parsed.totalYearsExperience}y exp, skills: ${parsed.skills?.slice(0, 10).join(', ')}`
+            : undefined,
           jobTitle: analysis.job.title,
           matchScore: analysis.matchScore ?? undefined,
-          skillGaps: (analysis.skillGaps as any[])?.slice(0, 5).map((g: any) => g.skill) ?? [],
+          skillGaps: analysis.skillGaps.map((g) => g.skillName),
         };
       }
     }
@@ -36,16 +54,15 @@ export class CoachingService {
     const messages: ChatMessage[] = [{ role: 'user', content: message }];
     const response = await this.coachAgent.chat(messages, context);
 
-    // Save session
     const session = await this.prisma.coachingSession.create({
       data: {
         userId,
-        messages: [
-          { role: 'user', content: message, timestamp: new Date().toISOString() },
-          { role: 'assistant', content: response, timestamp: new Date().toISOString() },
-        ] as any,
+        analysisId: linkedAnalysisId,
         context: context as any,
         title: message.substring(0, 60),
+        messages: {
+          create: turn(message, response),
+        },
       },
     });
 
@@ -53,29 +70,29 @@ export class CoachingService {
   }
 
   async continueSession(sessionId: string, userId: string, message: string) {
-    const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.coachingSession.findUnique({
+      where: { id: sessionId },
+      include: { messages: { orderBy: { createdAt: 'asc' } } },
+    });
     if (!session) throw new NotFoundException('Session not found');
     if (session.userId !== userId) throw new ForbiddenException('Access denied');
 
-    const history = session.messages as any[];
-    const messages: ChatMessage[] = history.map((m: any) => ({
-      role: m.role,
+    const messages: ChatMessage[] = session.messages.map((m) => ({
+      role: toApiRole(m.role),
       content: m.content,
     }));
     messages.push({ role: 'user', content: message });
 
     const response = await this.coachAgent.chat(messages, session.context as any);
 
-    // Update session with new messages
-    const updatedMessages = [
-      ...history,
-      { role: 'user', content: message, timestamp: new Date().toISOString() },
-      { role: 'assistant', content: response, timestamp: new Date().toISOString() },
-    ];
-
+    // Append the new turn (bumps updatedAt so the session sorts to the top)
     await this.prisma.coachingSession.update({
       where: { id: sessionId },
-      data: { messages: updatedMessages as any },
+      data: {
+        messages: {
+          create: turn(message, response),
+        },
+      },
     });
 
     return { response };
@@ -95,20 +112,34 @@ export class CoachingService {
   }
 
   async getSession(sessionId: string, userId: string) {
-    const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.coachingSession.findUnique({
+      where: { id: sessionId },
+      include: { messages: { orderBy: { createdAt: 'asc' } } },
+    });
     if (!session) throw new NotFoundException('Session not found');
     if (session.userId !== userId) throw new ForbiddenException('Access denied');
-    return session;
+
+    return {
+      ...session,
+      messages: session.messages.map((m) => ({
+        role: toApiRole(m.role),
+        content: m.content,
+        timestamp: m.createdAt.toISOString(),
+      })),
+    };
   }
 
   async getInterviewQuestions(userId: string, jobId: string) {
-    const job = await this.prisma.job.findUnique({ where: { id: jobId } });
-    if (!job) throw new NotFoundException('Job not found');
+    const job = await this.prisma.job.findUnique({
+      where: { id: jobId },
+      include: { skills: { where: { importance: 'REQUIRED' }, include: { skill: { select: { name: true } } } } },
+    });
+    if (!job || !job.isActive) throw new NotFoundException('Job not found');
     if (job.userId !== userId) throw new ForbiddenException('Access denied');
 
     return this.coachAgent.generateInterviewQuestions(
       job.title,
-      job.requiredSkills,
+      job.skills.map((s) => s.skill.name),
       job.experienceLevel || 'mid-level',
     );
   }
