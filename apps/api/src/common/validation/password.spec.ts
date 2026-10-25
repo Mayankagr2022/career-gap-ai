@@ -12,7 +12,7 @@ describe('password rule', () => {
     'Passw0rd-2024',
     'My_Passw0rd2024',
     '#Passw0rd2024@',
-    'Passw0rd 2024!',
+    'Passw0rd 2024!', // a space is fine as long as there is also a real symbol
     'aA1.....',
     'Ünïcode1Pass!',
   ];
@@ -23,6 +23,8 @@ describe('password rule', () => {
     'Password@abc', // no digit
     'Ab1@', // too short
     '        ', // only spaces
+    'Passw0rd 2024', // a space is not a special character
+    'My Passw0rd 2024', // still no symbol
     '',
   ];
 
