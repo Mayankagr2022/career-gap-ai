@@ -6,9 +6,53 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 const MIN_JOBS = 5;
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const SNAPSHOT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/** Ideal distance to compare against: a skill's demand now vs. about a week ago. */
 const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-/** Relative change in demandScore vs. the window-old snapshot that counts as rising/declining. */
+/** Trends start after one day of history; the closest snapshot to a week ago is used once there is more. */
+const TREND_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+const TREND_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** Relative change in demandScore vs. the comparison snapshot that counts as rising/declining. */
 const TREND_THRESHOLD = 0.1;
+/** A move of a single job is noise in a small data set; require at least this many jobs of change. */
+const MIN_TREND_JOB_DELTA = 2;
+
+export interface TrendSample {
+  demandScore: number;
+  jobCount: number;
+}
+
+/**
+ * Rising / declining / stable for one skill.
+ *  - needs history: without any earlier snapshot nothing can be called a trend;
+ *  - a skill with no earlier snapshot while the market has history is new, and compares against zero;
+ *  - the change must be large relatively (share of jobs) and in absolute terms (number of jobs), so one extra job in a
+ *    handful of postings, or the total simply growing, does not flip a skill.
+ */
+export function classifyTrend(current: TrendSample, previous: TrendSample | undefined, hasHistory: boolean): SkillTrend {
+  if (!hasHistory) return SkillTrend.STABLE;
+  const before = previous ?? { demandScore: 0, jobCount: 0 };
+
+  const jobDelta = current.jobCount - before.jobCount;
+  if (Math.abs(jobDelta) < MIN_TREND_JOB_DELTA) return SkillTrend.STABLE;
+
+  const change = before.demandScore > 0 ? (current.demandScore - before.demandScore) / before.demandScore : Infinity;
+  if (jobDelta > 0 && change >= TREND_THRESHOLD) return SkillTrend.RISING;
+  if (jobDelta < 0 && change <= -TREND_THRESHOLD) return SkillTrend.DECLINING;
+  return SkillTrend.STABLE;
+}
+
+/** For each skill, the snapshot taken closest to a week ago among those at least a day old. */
+export function pickComparisonSnapshots<T extends { skillId: string; capturedAt: Date }>(snapshots: T[], now: number): Map<string, T> {
+  const target = now - TREND_WINDOW_MS;
+  const best = new Map<string, T>();
+  for (const snapshot of snapshots) {
+    const current = best.get(snapshot.skillId);
+    if (!current || Math.abs(snapshot.capturedAt.getTime() - target) < Math.abs(current.capturedAt.getTime() - target)) {
+      best.set(snapshot.skillId, snapshot);
+    }
+  }
+  return best;
+}
 /** A company is only listed once at least this many jobs name it, so one user's entry is never exposed. */
 const MIN_COMPANY_JOBS = 2;
 const TOP_COMPANIES = 5;
@@ -22,7 +66,7 @@ export interface MarketOverview {
   minJobs: number;
   /** Whether enough jobs exist for any stats to be published. */
   ready: boolean;
-  /** Whether a snapshot at least a week old exists, which is what "rising"/"declining" is measured against. */
+  /** Whether a snapshot at least a day old exists, which is what "rising"/"declining" is measured against. */
   trendHistory: boolean;
   skillCount: number;
   lastUpdated: Date | null;
@@ -69,7 +113,7 @@ export class MarketStatsService {
     const [activeJobs, skillCount, oldSnapshots, latest] = await Promise.all([
       this.prisma.job.count({ where: { isActive: true } }),
       this.prisma.skillMarketStat.count(),
-      this.prisma.skillMarketSnapshot.count({ where: { capturedAt: { lte: new Date(Date.now() - TREND_WINDOW_MS) } } }),
+      this.prisma.skillMarketSnapshot.count({ where: { capturedAt: { lte: new Date(Date.now() - TREND_MIN_AGE_MS) } } }),
       this.prisma.skillMarketStat.aggregate({ _max: { lastUpdated: true } }),
     ]);
     return {
@@ -120,17 +164,16 @@ export class MarketStatsService {
     const now = Date.now();
     const [old, recent] = await Promise.all([
       this.prisma.skillMarketSnapshot.findMany({
-        where: { capturedAt: { lte: new Date(now - TREND_WINDOW_MS) } },
-        orderBy: { capturedAt: 'desc' },
-        distinct: ['skillId'],
-        select: { skillId: true, demandScore: true },
+        where: { capturedAt: { lte: new Date(now - TREND_MIN_AGE_MS), gte: new Date(now - TREND_MAX_AGE_MS) } },
+        select: { skillId: true, demandScore: true, jobCount: true, capturedAt: true },
       }),
       this.prisma.skillMarketSnapshot.findMany({
         where: { capturedAt: { gte: new Date(now - SNAPSHOT_INTERVAL_MS) } },
         select: { skillId: true },
       }),
     ]);
-    const previous = new Map(old.map((s) => [s.skillId, s.demandScore]));
+    const hasHistory = old.length > 0;
+    const previous = pickComparisonSnapshots(old, now);
     const snapshotted = new Set(recent.map((s) => s.skillId));
 
     const upserts = [];
@@ -148,7 +191,7 @@ export class MarketStatsService {
 
       const data = {
         demandScore,
-        trend: this.trendOf(demandScore, previous.get(skillId)),
+        trend: classifyTrend({ demandScore, jobCount: a.jobCount }, previous.get(skillId), hasHistory),
         averageSalary,
         jobCount: a.jobCount,
         topCompanies,
@@ -179,13 +222,5 @@ export class MarketStatsService {
     if (currency && currency.toUpperCase() !== 'USD') return undefined;
     if (min != null && max != null) return (min + max) / 2;
     return min ?? max ?? undefined;
-  }
-
-  private trendOf(current: number, previous: number | undefined): SkillTrend {
-    if (!previous) return SkillTrend.STABLE;
-    const change = (current - previous) / previous;
-    if (change >= TREND_THRESHOLD) return SkillTrend.RISING;
-    if (change <= -TREND_THRESHOLD) return SkillTrend.DECLINING;
-    return SkillTrend.STABLE;
   }
 }

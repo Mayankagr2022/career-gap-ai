@@ -49,8 +49,9 @@ export function MarketTrends() {
         <div className="flex items-start gap-3 rounded-xl border border-brand-500/20 bg-brand-500/5 p-4 text-sm text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
           <p>
-            Skills are ranked by how many jobs mention them. Rising and declining arrows appear after about a week of
-            history, once demand can be compared with last week.
+            Skills are ranked by how many jobs mention them. Rising and declining arrows appear after a day or so of
+            history, once demand can be compared with earlier days. A skill only counts as rising or declining when its
+            number of jobs changes by at least two, so small data sets stay calm.
           </p>
         </div>
       )}
