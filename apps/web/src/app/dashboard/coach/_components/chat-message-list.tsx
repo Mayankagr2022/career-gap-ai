@@ -2,6 +2,7 @@ import { RefObject } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, User, Sparkles, ArrowUpRight } from 'lucide-react';
 import { formatRelativeTime, cn } from '@/lib/utils';
+import { ChatMarkdown } from './chat-markdown';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -89,7 +90,11 @@ export function ChatMessageList({
                     : 'rounded-tl-sm border border-white/10 bg-white/[0.05] text-foreground',
                 )}
               >
-                <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                {isUser ? (
+                  <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                ) : (
+                  <ChatMarkdown content={message.content} />
+                )}
                 <div className={cn('mt-1 text-[10px]', isUser ? 'text-white/70' : 'text-muted-foreground/70')}>
                   {formatRelativeTime(message.timestamp)}
                 </div>

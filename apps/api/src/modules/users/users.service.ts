@@ -8,6 +8,15 @@ import * as bcrypt from 'bcryptjs';
 import { StorageService } from '../../common/storage/storage.service';
 import { AuditService } from '../../common/audit/audit.service';
 
+/** Storage key of one of the user's own avatar uploads inside a URL path, or null (path-style URLs prefix the bucket). */
+export function ownAvatarKey(pathname: string, userId: string): string | null {
+  const prefix = `avatars/${userId}/`;
+  const at = pathname.indexOf(prefix);
+  if (at !== 0 && !(at > 0 && pathname[at - 1] === '/')) return null;
+  const key = pathname.slice(at);
+  return key.length > prefix.length && !key.includes('..') ? key : null;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -203,7 +212,11 @@ export class UsersService {
     if (user.avatar.includes('amazonaws.com')) {
       try {
         const urlObj = new URL(user.avatar);
-        const key = urlObj.pathname.substring(1); 
+        // Only sign this user's own avatar objects. The avatar URL is user-editable, so signing whatever key it names
+        // would hand out links to other files in the bucket (resumes of other users).
+        const key = ownAvatarKey(decodeURIComponent(urlObj.pathname), userId);
+        if (!key) return user.avatar;
+
         return await this.storage.getSignedUrl(key, 3600);
       } catch (e) {
         return user.avatar;
@@ -241,17 +254,43 @@ export class UsersService {
   }
 
   async deleteAccount(userId: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        isActive: false,
-        deletedAt: new Date(),
-        email: `deleted_${Date.now()}_${userId}@deleted.com`,
-      },
-    });
-    await this.prisma.oAuthAccount.deleteMany({ where: { userId } });
+    // Stored files first: once the rows are gone their keys are lost
+    const resumes = await this.prisma.resume.findMany({ where: { userId }, select: { fileKey: true } });
+    const current = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatar: true } });
+    const keys = resumes.map((r) => r.fileKey);
+    if (current?.avatar?.includes('amazonaws.com')) {
+      const avatarKey = ownAvatarKey(decodeURIComponent(new URL(current.avatar).pathname), userId);
+      if (avatarKey) keys.push(avatarKey);
+    }
+    // StorageService.deleteFile logs and swallows its own errors, so a storage hiccup cannot block the deletion
+    await Promise.all(keys.map((key) => this.storage.deleteFile(key)));
+
+    // Remove everything the user created (analyses, embeddings, skill links and roadmap rows cascade); keep only the
+    // anonymised user row and the audit trail
+    await this.prisma.$transaction([
+      this.prisma.coachingSession.deleteMany({ where: { userId } }),
+      this.prisma.roadmap.deleteMany({ where: { userId } }),
+      this.prisma.recommendation.deleteMany({ where: { userId } }),
+      this.prisma.analysis.deleteMany({ where: { userId } }),
+      this.prisma.resume.deleteMany({ where: { userId } }),
+      this.prisma.job.deleteMany({ where: { userId } }),
+      this.prisma.notification.deleteMany({ where: { userId } }),
+      this.prisma.authToken.deleteMany({ where: { userId } }),
+      this.prisma.oAuthAccount.deleteMany({ where: { userId } }),
+      this.prisma.userSession.deleteMany({ where: { userId } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isActive: false,
+          deletedAt: new Date(),
+          email: `deleted_${Date.now()}_${userId}@deleted.com`,
+          name: 'Deleted user',
+          avatar: null,
+          password: null,
+        },
+      }),
+    ]);
     await this.audit.log({ userId, action: 'user.delete_account', entity: 'user', entityId: userId });
-    await this.prisma.userSession.deleteMany({ where: { userId } });
     return { message: 'Account deleted successfully' };
   }
 

@@ -20,6 +20,8 @@ import { tokenExpiresAt, tokenLifetimeMs } from './token-lifetime';
 
 // Refresh and reset tokens are stored hashed so a DB leak can't be replayed
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+/** How long a rotated refresh token keeps working, so concurrent refreshes from several tabs all succeed. */
+export const REFRESH_ROTATION_GRACE_MS = 30_000;
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 @Injectable()
@@ -104,8 +106,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Rotate refresh token
-    await this.prisma.userSession.delete({ where: { id: session.id } });
+    // Rotate the refresh token, but keep the old one usable for a few seconds. Two tabs that refresh at the same time
+    // both present the same cookie; deleting it at once would sign the slower tab (and, through the shared session
+    // flag, every other tab) out. Each caller still gets its own new session.
+    const graceEnd = new Date(Date.now() + REFRESH_ROTATION_GRACE_MS);
+    if (session.expiresAt > graceEnd) {
+      await this.prisma.userSession.update({ where: { id: session.id }, data: { expiresAt: graceEnd } });
+    }
 
     return this.generateTokens(session.user);
   }
@@ -254,6 +261,17 @@ export class AuthService {
     // 2. Otherwise match by email and link this provider to the existing account
     if (!user) {
       user = await this.prisma.user.findUnique({ where: { email } });
+      if (user && !user.isEmailVerified) {
+        // Local sign-up does not verify the address, so whoever registered it first may not own it. The provider
+        // has just proven ownership: drop the password, sessions and reset links that person could still hold.
+        await this.prisma.$transaction([
+          this.prisma.user.update({ where: { id: user.id }, data: { password: null } }),
+          this.prisma.userSession.deleteMany({ where: { userId: user.id } }),
+          this.prisma.authToken.deleteMany({ where: { userId: user.id } }),
+        ]);
+        this.logger.warn(`Unverified local account ${user.id} claimed through ${provider}; credentials reset`);
+        user = { ...user, password: null };
+      }
     }
 
     if (!user) {

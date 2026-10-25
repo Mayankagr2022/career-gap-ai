@@ -3,11 +3,18 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnalysisStatus, Prisma, ResumeStatus } from '@prisma/client';
+import { USER_LIST_LIMIT } from '../../common/utils/list-limit';
 import { toRoadmapDto } from '../roadmaps/roadmaps.service';
 
 const gapsInclude = {
@@ -35,12 +42,45 @@ function withGapArrays<T extends { skillGaps: any[]; atsSuggestions: any[] }>(an
   };
 }
 
+/** An analysis still PENDING/PROCESSING after this long has lost its job (worker crash, lost queue entry). */
+export const STALE_ANALYSIS_MS = 15 * 60 * 1000;
+/** Analyses one user may have running at once; each makes several AI calls. */
+export const MAX_ACTIVE_ANALYSES_PER_USER = 3;
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
 @Injectable()
-export class AnalysesService {
+export class AnalysesService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(AnalysesService.name);
+  private sweepTimer?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
     @InjectQueue('analysis-processing') private readonly analysisQueue: Queue,
   ) {}
+
+  onModuleInit() {
+    this.sweepTimer = setInterval(() => {
+      this.failStale().catch((e) => this.logger.warn(`Stale analysis sweep failed: ${e.message}`));
+    }, SWEEP_INTERVAL_MS);
+    this.sweepTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  /** Marks analyses whose job never finished as FAILED so the UI stops polling them. Safe to run on several instances. */
+  async failStale(now = Date.now()) {
+    const { count } = await this.prisma.analysis.updateMany({
+      where: {
+        status: { in: [AnalysisStatus.PENDING, AnalysisStatus.PROCESSING] },
+        updatedAt: { lt: new Date(now - STALE_ANALYSIS_MS) },
+      },
+      data: { status: AnalysisStatus.FAILED, errorMessage: 'The analysis took too long and was stopped. Please try again.' },
+    });
+    if (count > 0) this.logger.warn(`Marked ${count} stale analyses as FAILED`);
+    return count;
+  }
 
   async create(userId: string, resumeId: string, jobId: string) {
     // Validate resume belongs to user and is analyzed
@@ -56,6 +96,21 @@ export class AnalysesService {
     if (!job || !job.isActive) throw new NotFoundException('Job not found');
     if (job.userId !== userId) throw new ForbiddenException('Access denied to job');
 
+    // Cap concurrent runs per user and refuse a second run of the same pair, so one account cannot flood the AI queue
+    const active = await this.prisma.analysis.findMany({
+      where: { userId, status: { in: [AnalysisStatus.PENDING, AnalysisStatus.PROCESSING] } },
+      select: { resumeId: true, jobId: true },
+    });
+    if (active.some((a) => a.resumeId === resumeId && a.jobId === jobId)) {
+      throw new BadRequestException('This resume and job are already being analyzed. Please wait for it to finish.');
+    }
+    if (active.length >= MAX_ACTIVE_ANALYSES_PER_USER) {
+      throw new HttpException(
+        'You have several analyses running. Please wait for one to finish before starting another.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     // Create analysis record
     const analysis = await this.prisma.analysis.create({
       data: {
@@ -66,12 +121,21 @@ export class AnalysesService {
       },
     });
 
-    // Queue analysis
-    await this.analysisQueue.add(
-      'process-analysis',
-      { analysisId: analysis.id },
-      { priority: 1, attempts: 3 },
-    );
+    // Queue analysis; if that fails the row would sit in PENDING forever
+    try {
+      await this.analysisQueue.add(
+        'process-analysis',
+        { analysisId: analysis.id },
+        { priority: 1, attempts: 3 },
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to queue analysis ${analysis.id}: ${error.message}`);
+      await this.prisma.analysis.update({
+        where: { id: analysis.id },
+        data: { status: AnalysisStatus.FAILED, errorMessage: 'Could not start the analysis. Please try again.' },
+      });
+      throw new ServiceUnavailableException('Analysis is temporarily unavailable. Please try again shortly.');
+    }
 
     return analysis;
   }
@@ -81,6 +145,7 @@ export class AnalysesService {
     return this.prisma.analysis.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+      take: USER_LIST_LIMIT,
       select: {
         id: true,
         status: true,

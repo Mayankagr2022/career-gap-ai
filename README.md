@@ -431,7 +431,7 @@ The server template, one-time setup, GitHub secrets and variables, backups and e
 | Old link `/dashboard/analyses/<id>` | Forwarded to `/dashboard/analyses/view?id=<id>` by the site's not-found page |
 | Deploy job shows as skipped | Set the repository variable `DEPLOY_ENABLED=true` (and `API_URL` for the Pages job) |
 | Swagger 404 at `/api/docs` | Swagger lives at `/docs`; disabled in production |
-| Dev scripts `check.js`, `list-models.js`, `test-chat.js` in `apps/api` | Ad-hoc helpers for checking Gemini access/models; not part of the app runtime |
+| Dev scripts in `apps/api/scripts/dev` (`check-roadmaps.js`, `list-gemini-models.js`, `test-gemini-chat.js`) | Ad-hoc helpers for inspecting roadmaps and checking Gemini access/models; run from `apps/api` with `node scripts/dev/<file>`; not part of the app runtime |
 
 ## License
 

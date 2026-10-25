@@ -46,6 +46,10 @@ export class AnalysisProcessor {
 
     this.logger.log(`Processing analysis: ${analysisId}`);
 
+    // Set once the results are committed. After that a failure must not retry the job (it would run every AI call
+    // again and duplicate the results) or mark a finished analysis FAILED.
+    let committed = false;
+
     try {
       // 1. Set status to PROCESSING
       await this.prisma.analysis.update({
@@ -150,6 +154,8 @@ export class AnalysisProcessor {
         // Re-runs must not duplicate child rows
         await tx.analysisSkillGap.deleteMany({ where: { analysisId } });
         await tx.analysisAtsSuggestion.deleteMany({ where: { analysisId } });
+        await tx.recommendation.deleteMany({ where: { analysisId } });
+        await tx.roadmap.deleteMany({ where: { analysisId } });
 
         await tx.analysisSkillGap.createMany({
           data: (gapResult.skillGaps ?? []).map((g) => ({
@@ -219,6 +225,8 @@ export class AnalysisProcessor {
         });
       });
 
+      committed = true;
+
       // Outside the transaction: a notification problem must not undo a finished analysis
       await this.notifications.notify({
         userId: analysis.userId,
@@ -230,6 +238,10 @@ export class AnalysisProcessor {
 
       this.logger.log(`Analysis ${analysisId} completed in ${processingTime}ms`);
     } catch (error: any) {
+      if (committed) {
+        this.logger.error(`Analysis ${analysisId} was saved but a later step failed: ${error.message}`);
+        return;
+      }
       this.logger.error(`Analysis ${analysisId} failed: ${error.message}`);
 
       // Only the final attempt marks the analysis FAILED and notifies the user;

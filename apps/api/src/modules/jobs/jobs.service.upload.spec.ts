@@ -193,10 +193,14 @@ describe('JobsService file upload', () => {
     });
 
     it('lets a pasted job edit its description as before', async () => {
-      const { service, prisma } = setup();
+      const { service, prisma, parser } = setup();
       prisma.job.findUnique.mockResolvedValue({ ...uploaded, sourceFilename: null });
       prisma.job.update.mockResolvedValue({ ...uploaded, skills: [] });
+      // a changed description is parsed again and its skills replaced in one transaction
+      (prisma as any).jobSkill = { deleteMany: jest.fn().mockResolvedValue({}) };
+      (prisma as any).$transaction = jest.fn().mockImplementation((ops: any[]) => Promise.all(ops));
       await expect(service.update('job-1', USER, { description: 'changed' })).resolves.toBeDefined();
+      expect(parser.parse).toHaveBeenCalled();
     });
   });
 });

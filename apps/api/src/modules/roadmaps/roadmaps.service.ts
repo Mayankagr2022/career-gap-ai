@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { USER_LIST_LIMIT } from '../../common/utils/list-limit';
 
 const milestonesInclude = {
   milestones: {
@@ -41,6 +42,7 @@ export class RoadmapsService {
     const roadmaps = await this.prisma.roadmap.findMany({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'desc' },
+      take: USER_LIST_LIMIT,
       include: {
         ...milestonesInclude,
         analysis: {

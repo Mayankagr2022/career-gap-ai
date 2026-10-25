@@ -24,9 +24,15 @@ export const NAV_ITEMS = [
   { href: '/dashboard/market', icon: TrendingUp, label: 'Market Trends' },
 ];
 
+/** "/dashboard/" and "/dashboard" are the same page (the static export serves every page with a trailing slash). */
+const withoutTrailingSlash = (path: string) => (path.length > 1 ? path.replace(/\/+$/, '') : path);
+
 export function isNavActive(pathname: string, href: string, exact?: boolean) {
-  if (exact) return pathname === href;
-  return pathname.startsWith(href);
+  const path = withoutTrailingSlash(pathname);
+  const target = withoutTrailingSlash(href);
+  if (exact) return path === target;
+  // Whole path segments only, so "/dashboard/jobs" does not match "/dashboard/jobs-archive"
+  return path === target || path.startsWith(`${target}/`);
 }
 
 interface SidebarProps {
