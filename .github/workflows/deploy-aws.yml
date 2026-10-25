@@ -53,7 +53,8 @@ jobs:
   deploy:
     name: Build images, migrate and deploy to ECS
     needs: [infra]
-    if: github.event_name == 'workflow_dispatch'
+    # Skipped (not failed) until the AWS role variable exists; this path is optional and the default deploy is main.yml
+    if: github.event_name == 'workflow_dispatch' && vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Add required reviewers to this environment in the repository settings to gate production deploys.
