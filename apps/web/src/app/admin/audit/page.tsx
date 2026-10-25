@@ -71,7 +71,7 @@ export default function AdminAuditPage() {
     <div className="min-w-0">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">// audit log</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{'//'} audit log</p>
           <p className="text-sm text-muted-foreground">Security and administrative events, newest first.</p>
         </div>
         <button type="button" onClick={() => refetch()} className="btn-secondary inline-flex min-h-[40px] items-center gap-2 px-3 py-2 text-xs">

@@ -60,7 +60,7 @@ export class DocumentTextService {
   private extractFromText(buffer: Buffer): string {
     const text = buffer
       .toString('utf8')
-      .replace(/^﻿/, '') // BOM
+      .replace(/^\uFEFF/, '') // BOM
       .replace(/\r\n?/g, '\n')
       .trim();
 

@@ -86,7 +86,7 @@ export default function AdminSettingsPage() {
   return (
     <div className="min-w-0">
       <div className="mb-5">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">// settings</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{'//'} settings</p>
         <p className="text-sm text-muted-foreground">
           Informational only. These controls are not connected to the backend yet and do not change anything.
         </p>

@@ -32,7 +32,7 @@ export default function AdminAnalyticsPage() {
   const header = (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">// analytics</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{'//'} analytics</p>
         <p className="text-sm text-muted-foreground">Content, AI usage and quality over the selected period.</p>
       </div>
       <Segmented<number> value={days} onChange={setDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />

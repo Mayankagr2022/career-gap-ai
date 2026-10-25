@@ -64,7 +64,7 @@ export function AdminHeader() {
             <TerminalSquare className="h-4 w-4" />
           </span>
           <div className="min-w-0 leading-tight">
-            <div className="truncate font-mono text-sm font-bold tracking-[0.14em]">CAREERGAP<span className="text-primary">//</span>ADMIN</div>
+            <div className="truncate font-mono text-sm font-bold tracking-[0.14em]">CAREERGAP<span className="text-primary">{'//'}</span>ADMIN</div>
             <div className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground sm:block">control room</div>
           </div>
         </div>

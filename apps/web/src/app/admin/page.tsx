@@ -52,7 +52,7 @@ export default function AdminOverviewPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">// overview</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{'//'} overview</p>
           <p className="text-sm text-muted-foreground">
             Live snapshot of growth, analysis quality and AI usage
             {data && <span className="font-mono text-xs"> · updated {formatDistanceToNow(new Date(data.generatedAt), { addSuffix: true })}</span>}

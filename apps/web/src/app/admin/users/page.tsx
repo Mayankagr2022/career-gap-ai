@@ -136,7 +136,7 @@ export default function AdminUsersPage() {
   const header = (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">// users</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{'//'} users</p>
         <p className="text-sm text-muted-foreground">Manage roles and access for every account.</p>
       </div>
       <button type="button" onClick={() => exportCsv(filtered)} disabled={!filtered.length} className="btn-secondary inline-flex min-h-[40px] items-center gap-2 px-3 py-2 text-xs disabled:opacity-50">
