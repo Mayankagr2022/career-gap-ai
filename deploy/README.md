@@ -25,6 +25,40 @@ For a managed, multi-server setup on AWS see [`infra/README.md`](../infra/README
 | An S3-compatible bucket | For resume files: AWS S3, Cloudflare R2, Backblaze B2 and similar. Create a bucket and an access key limited to it. |
 | GitHub repository access | To add secrets and variables and to create the `production` environment. |
 
+## Free option: Oracle Cloud "Always Free" server
+
+Oracle's Always Free tier includes a virtual machine large enough for this app, at no cost. It needs an account with a card for identity
+verification (Always Free resources are not charged). Capacity can be limited in a region; if creation says "out of capacity", try again later.
+
+1. **Create the account** at <https://www.oracle.com/cloud/free/>. Choose your home region carefully: it cannot be changed later.
+2. **Create the server**: *Compute > Instances > Create instance*.
+   - Image: **Canonical Ubuntu 24.04** (or 22.04).
+   - Shape: **VM.Standard.A1.Flex** (Ampere, ARM) with **2 OCPUs and 12 GB** of memory (Always Free allows up to 4 and 24). The small
+     AMD "E2.1.Micro" shape has 1 GB and is too small for this stack.
+   - Networking: keep the defaults and make sure a **public IPv4 address** is assigned.
+   - SSH keys: choose *Generate a key pair for me* and **download the private key**. You use it to log in the first time (as user `ubuntu`).
+3. **Keep the address.** *Networking > IP management > Reserved public IPs*: reserve one and attach it to the server, so the address survives a restart.
+4. **Open the web ports.** *Networking > Virtual cloud networks > your VCN > Security lists > Default > Add ingress rules*: source `0.0.0.0/0`,
+   protocol TCP, destination ports `80` and `443` (two rules). Without this, HTTPS certificates cannot be issued.
+5. **Log in and prepare the server.** From your computer:
+
+   ```bash
+   ssh -i path/to/oracle-private-key ubuntu@YOUR_SERVER_IP
+   curl -fsSLO https://raw.githubusercontent.com/Mayankagr2022/career-gap-ai/main/deploy/setup-server.sh
+   less setup-server.sh                       # read it first; press q to leave
+   sudo bash setup-server.sh "<the deploy PUBLIC key>"
+   ```
+
+   The script installs Docker, creates the `deploy` user with that key, creates `/opt/careergap`, adds swap and turns on automatic security
+   updates. It is safe to run again. The deploy public key is the one that matches the `SSH_PRIVATE_KEY` secret in GitHub.
+6. **Get a free host name.** Sign in at <https://www.duckdns.org> (with GitHub), create a name such as `careergap`, and set its IP to your server's address.
+   Your site will be `https://careergap.duckdns.org`; Caddy gets the certificate by itself.
+7. **Create a bucket for resume files.** Oracle Object Storage (Always Free: 20 GB) has an S3-compatible endpoint; Cloudflare R2 and Backblaze B2 also have free tiers.
+   Use the endpoint, region, bucket and access keys in `.env` (see the comments in `.env.example`).
+8. **Create `/opt/careergap/.env`** as described below, then continue with *GitHub settings*.
+
+Everything from "One-time server setup" onwards still applies; the steps above replace the parts about choosing and preparing a server.
+
 ## One-time server setup
 
 1. **Firewall**: allow only SSH (22), HTTP (80) and HTTPS (443), in your provider's firewall or with `ufw`.
