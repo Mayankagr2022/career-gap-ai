@@ -175,6 +175,7 @@ The API loads `.env.local` then `.env` in development and `.env.production` when
 | `PORT` | API port | `3001` |
 | `API_PREFIX` | Global route prefix | `api/v1` |
 | `FRONTEND_URL` | Allowed CORS origin / OAuth redirects | `http://localhost:3000` |
+| `AUTH_TOKEN_MODE` | `true` when the website is on another address than the API (GitHub Pages): sign-in returns tokens in the response instead of setting cookies | `false` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/career_gap_ai?schema=public` |
 | `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT` | Redis connection | `localhost:6379` |
 | `JWT_SECRET`, `JWT_EXPIRES_IN` | Access-token signing / TTL (short, so a copied token stops working soon after logout; the browser refreshes it silently) | TTL `15m` |
@@ -200,6 +201,7 @@ The API loads `.env.local` then `.env` in development and `.env.production` when
 | Variable | Purpose |
 |----------|---------|
 | `NEXT_PUBLIC_API_URL` | Base URL of the API (e.g. `http://localhost:3001/api/v1`). If unset, falls back to `http(s)://<current-host>:3001/api/v1` in the browser. |
+| `NEXT_PUBLIC_AUTH_MODE`, `NEXT_PUBLIC_BASE_PATH`, `NEXT_OUTPUT` | Static export for GitHub Pages: `token` (Bearer tokens instead of cookies), the site's path prefix (`/<repo>`), and `export` | unset |
 
 ## Scripts
 
@@ -381,10 +383,14 @@ Unit tests (Jest, no database needed) cover the job title/company detection, fil
 
 ### Deploying with GitHub Actions
 
-`.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also deployed to a
-**single server running Docker Compose** after someone approves the `production` environment (the deploy job is skipped until the repository variable `DEPLOY_ENABLED` is `true`): it builds the API and web images
-(`apps/api/Dockerfile`, `apps/web/Dockerfile`), pushes them to the GitHub Container Registry, runs the database migrations, starts the new version behind
+`.github/workflows/main.yml` type-checks, tests and builds every pull request and push to `main`. A push to `main` that passes is also published in two parts:
+
+- **The website** is built as a static export and hosted on **GitHub Pages** (the `pages` job runs once the repository variable `API_URL` is set). The site and the API are on different addresses, so the API runs with `AUTH_TOKEN_MODE=true` and sign-in uses Bearer tokens instead of cookies.
+- **The API** is deployed to a **single server running Docker Compose** after someone approves the `production` environment (the deploy job is skipped until the repository variable `DEPLOY_ENABLED` is `true`): it builds the API image
+(`apps/api/Dockerfile`), pushes it to the GitHub Container Registry, runs the database migrations, starts the new version behind
 Caddy (automatic HTTPS) and switches back to the previous version if the new one does not become healthy.
+
+(`apps/web/Dockerfile` still builds a standalone web server image for running the whole stack yourself.)
 The server files, the one-time setup, the GitHub secrets and variables, backups and day-to-day commands are in [`deploy/README.md`](deploy/README.md).
 
 An AWS alternative (ECS Fargate, RDS, ElastiCache, load balancer, defined in CDK) is in [`infra/`](infra/README.md); it only runs when started by hand from the

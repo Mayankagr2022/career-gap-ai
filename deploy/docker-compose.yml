@@ -1,5 +1,6 @@
-# CareerGap AI on a single server: Caddy (automatic HTTPS) in front of the web and API containers,
-# with PostgreSQL (pgvector) and Redis alongside. Resume uploads go to an S3-compatible bucket.
+# CareerGap AI API on a single server: Caddy (automatic HTTPS) in front of the API container, with PostgreSQL
+# (pgvector) and Redis alongside. Resume uploads go to an S3-compatible bucket. The website is not served from here:
+# it is built by GitHub Actions and hosted on GitHub Pages, and it calls this API (see deploy/README.md).
 #
 # Run by deploy.sh on the server, which the GitHub Actions workflow calls. Configuration comes from the .env file
 # next to this file (see .env.example); it never leaves the server.
@@ -27,23 +28,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      web:
-        condition: service_healthy
-    logging: *logging
-
-  web:
-    image: ${IMAGE_PREFIX:?run deploy.sh}/web:${IMAGE_TAG:?run deploy.sh}
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
-      HOSTNAME: 0.0.0.0
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
     logging: *logging
 
   api:
@@ -58,7 +42,11 @@ services:
       NODE_ENV: production
       PORT: "3001"
       API_PREFIX: api/v1
-      FRONTEND_URL: https://${DOMAIN}
+      # Where the website is served from (GitHub Pages). Browsers on that address are allowed to call this API
+      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL in .env}
+      # The website is on another address, where browsers will not send this API's cookies: tokens are returned in
+      # the response and sent back as a Bearer header instead
+      AUTH_TOKEN_MODE: "true"
       # One proxy (Caddy) sits in front, so rate limits apply per visitor
       TRUST_PROXY_HOPS: "1"
 
@@ -81,8 +69,9 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:?Set AWS_S3_BUCKET in .env}
       AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID in .env}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY in .env}
+      # Leave both empty on an AWS server whose instance role can use the bucket (see deploy/aws/server.yaml)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
 
       AI_PROVIDER_ORDER: ${AI_PROVIDER_ORDER:-nvidia,gemini}
       AI_EMBEDDING_PROVIDER_ORDER: ${AI_EMBEDDING_PROVIDER_ORDER:-nvidia,gemini}

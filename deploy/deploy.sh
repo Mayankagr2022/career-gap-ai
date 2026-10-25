@@ -7,7 +7,7 @@
 # Set SKIP_PULL=1 to use images that are already on the machine (for example ones you built there yourself).
 #
 # Steps:
-#   1. Log in to the image registry (a token on stdin, only when REGISTRY_USER is set) and pull the new images.
+#   1. Log in to the image registry (a token on stdin, only when REGISTRY_USER is set) and pull the new API image.
 #   2. Start PostgreSQL and Redis, and wait until they are healthy.
 #   3. Run the database migrations with the new API image. If they fail, nothing running is touched.
 #   4. Start the new version and wait until every container reports healthy.
@@ -40,7 +40,7 @@ if [ "${SKIP_PULL:-0}" = "1" ]; then
   log "Using images already on this machine (SKIP_PULL=1)"
 else
   log "Pulling images for ${IMAGE_TAG}"
-  compose pull api web
+  compose pull api
 fi
 
 log "Starting the database and queue"

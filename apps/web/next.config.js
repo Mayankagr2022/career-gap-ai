@@ -4,6 +4,11 @@ const path = require('path');
 // Normal builds (pnpm build / next start) are unchanged.
 const standalone = process.env.NEXT_OUTPUT === 'standalone';
 
+// GitHub Pages build: NEXT_OUTPUT=export writes plain static files to ./out. The site then lives under
+// https://<owner>.github.io/<repo>/, so NEXT_PUBLIC_BASE_PATH=/<repo> is set for that build.
+const exportSite = process.env.NEXT_OUTPUT === 'export';
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   ...(standalone && {
@@ -11,8 +16,18 @@ const nextConfig = {
     // In a monorepo the server must trace files from the repository root to include workspace packages
     outputFileTracingRoot: path.join(__dirname, '../../'),
   }),
+  ...(exportSite && {
+    output: 'export',
+    // /auth/login/index.html: works on a static host without rewrite rules
+    trailingSlash: true,
+    // Its own build folder, so exporting never disturbs a running dev server
+    distDir: '.next-export',
+  }),
+  ...(basePath && { basePath }),
   transpilePackages: ['@career-gap-ai/shared'],
-  images: {
+  images: exportSite
+    ? { unoptimized: true } // image optimisation needs a server
+    : {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
       { protocol: 'https', hostname: 'avatars.githubusercontent.com' },
@@ -24,9 +39,11 @@ const nextConfig = {
       { protocol: 'http', hostname: 'localhost', port: '3000' },
     ],
   },
-  experimental: {
-    serverActions: { allowedOrigins: ['localhost:3000'] },
-  },
+  ...(!exportSite && {
+    experimental: {
+      serverActions: { allowedOrigins: ['localhost:3000'] },
+    },
+  }),
 };
 
 module.exports = nextConfig;

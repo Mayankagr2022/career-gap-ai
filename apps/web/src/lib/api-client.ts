@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { getSessionHint, useAuthStore } from '@/stores/auth.store';
+import { TOKEN_MODE, clearTokens, getTokens, setTokens } from '@/lib/token-store';
 
 export const getApiUrl = () => {
   if (typeof window !== 'undefined') {
@@ -14,7 +15,15 @@ export const apiClient = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
-  withCredentials: true,
+  // Cookie mode sends the API's cookies; token mode sends a Bearer header instead and needs no cookies
+  withCredentials: !TOKEN_MODE,
+});
+
+// Token mode: attach the current access token to every request (also to a retry after a refresh)
+apiClient.interceptors.request.use((config) => {
+  const tokens = getTokens();
+  if (tokens) config.headers.Authorization = `Bearer ${tokens.accessToken}`;
+  return config;
 });
 
 // Response interceptor — handle 401 and token refresh
@@ -42,7 +51,7 @@ apiClient.interceptors.response.use(
     const isAuthEndpoint = /\/auth\/(login|register|refresh|forgot-password|reset-password)/.test(originalRequest?.url ?? '');
 
     // A visitor known to be signed out has nothing to refresh; trying only adds another failing request
-    const signedOut = getSessionHint() === '0';
+    const signedOut = getSessionHint() === '0' || (TOKEN_MODE && !getTokens());
 
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && !signedOut) {
       if (isRefreshing) {
@@ -57,8 +66,12 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
-        const { user } = response.data.data;
+        // Token mode sends the refresh token in the body; cookie mode lets the browser send its cookie
+        const response = TOKEN_MODE
+          ? await axios.post(`${API_URL}/auth/refresh`, { refreshToken: getTokens()?.refreshToken })
+          : await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+        const { user, tokens } = response.data.data;
+        if (tokens) setTokens(tokens);
 
         // Optionally update the user in store if needed
         useAuthStore.getState().setAuth(user);
@@ -67,6 +80,7 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError as AxiosError);
+        clearTokens();
         useAuthStore.getState().clearAuth();
         // Surface the original failure, not the (less useful) refresh failure
         return Promise.reject(error);

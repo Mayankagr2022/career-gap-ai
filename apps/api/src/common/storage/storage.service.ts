@@ -13,10 +13,16 @@ export class StorageService {
     this.bucket = config.get<string>('aws.s3Bucket', 'career-gap-ai-uploads');
 
     const awsConfig: AWS.S3.ClientConfiguration = {
-      accessKeyId: config.get('aws.accessKeyId'),
-      secretAccessKey: config.get('aws.secretAccessKey'),
       region: config.get('aws.region', 'us-east-1'),
     };
+
+    // Without a key pair the SDK uses its default credential chain (for example the role of an EC2 server)
+    const accessKeyId = config.get<string>('aws.accessKeyId');
+    const secretAccessKey = config.get<string>('aws.secretAccessKey');
+    if (accessKeyId && secretAccessKey) {
+      awsConfig.accessKeyId = accessKeyId;
+      awsConfig.secretAccessKey = secretAccessKey;
+    }
 
     // Support local S3-compatible storage (e.g. MinIO)
     const endpoint = config.get('aws.s3Endpoint');

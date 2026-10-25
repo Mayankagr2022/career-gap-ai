@@ -122,7 +122,7 @@ export function useCreateAnalysis() {
       queryClient.invalidateQueries({ queryKey: analysisKeys.latest() });
       queryClient.invalidateQueries({ queryKey: userStatsKey });
       toast.success('Analysis started! AI is working on it...');
-      router.push(`/dashboard/analyses/${data.id}`);
+      router.push(`/dashboard/analyses/view?id=${data.id}`);
     },
     onError: (error: any) => {
       toast.error(getErrorMessage(error, 'Analysis failed to start'));

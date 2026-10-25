@@ -21,3 +21,7 @@ uploads/
 
 # AWS CDK synthesis output
 cdk.out
+
+# Static export for GitHub Pages
+.next-export
+apps/web/out

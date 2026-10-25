@@ -3,12 +3,20 @@ import { api, apiClient, getErrorMessage } from '@/lib/api-client';
 import { useAuthStore, setSessionHint } from '@/stores/auth.store';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { TOKEN_MODE, clearTokens, getTokens, setTokens, type StoredTokens } from '@/lib/token-store';
 
 interface RegisterData { name: string; email: string; password: string; }
 interface LoginData { email: string; password: string; }
 
 interface AuthResponse {
   user: { id: string; email: string; name: string; avatar?: string | null; role: string; provider: string; };
+  /** Present in token mode (web app on another address than the API) */
+  tokens?: StoredTokens & { expiresIn?: number };
+}
+
+function rememberTokens(data: AuthResponse) {
+  if (data.tokens) setTokens(data.tokens);
+  return data;
 }
 
 export function useRegister() {
@@ -17,7 +25,7 @@ export function useRegister() {
 
   return useMutation({
     mutationFn: (data: RegisterData) =>
-      apiClient.post<{ data: AuthResponse }>('/auth/register', data).then((r) => r.data.data),
+      apiClient.post<{ data: AuthResponse }>('/auth/register', data).then((r) => rememberTokens(r.data.data)),
     onSuccess: (data) => {
       setAuth(data.user);
       toast.success('Welcome to CareerGap AI!');
@@ -39,7 +47,7 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: (data: LoginData) =>
-      apiClient.post<{ data: AuthResponse }>('/auth/login', data).then((r) => r.data.data),
+      apiClient.post<{ data: AuthResponse }>('/auth/login', data).then((r) => rememberTokens(r.data.data)),
     onSuccess: (data) => {
       setAuth(data.user);
       toast.success(`Welcome back, ${data.user.name}!`);
@@ -62,11 +70,12 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: () =>
-      apiClient.post('/auth/logout', {}, { withCredentials: true }).catch(() => {}),
+      apiClient.post('/auth/logout', TOKEN_MODE ? { refreshToken: getTokens()?.refreshToken } : {}).catch(() => {}),
     onSettled: () => {
       // Mark signed out right away and stop in-flight and polling requests, so nothing keeps calling the API
       // (and failing, and trying to refresh) during the short delay below
       setSessionHint(false);
+      clearTokens();
       queryClient.cancelQueries();
       router.push('/auth/login');
       
